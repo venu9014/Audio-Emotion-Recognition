@@ -1,0 +1,35 @@
+# EMOTIVA / SONORA — Git Ignore
+
+# Virtual Environment
+.venv/
+venv/
+env/
+ENV/
+
+# Python cache & build
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Audio dataset (generate locally with: python src/create_sample_dataset.py)
+dataset/
+
+# Temporary files & reports
+scratch/
+*.tmp
+temp_*.wav
+reports/*.html
+reports/*.csv

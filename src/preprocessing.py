@@ -1,14 +1,78 @@
-"""
-EMOTIVA — Audio preprocessing module.
-Handles RAVDESS metadata parsing, audio loading, validation, splitting, and augmentation.
-"""
+import io
 import os
 import numpy as np
 import pandas as pd
 import librosa
 import soundfile as sf
+import config
 from sklearn.model_selection import GroupShuffleSplit
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple, Optional, Dict, Any, Union
+
+
+def decode_audio_bytes(audio_bytes: bytes, target_sr: int = 22050) -> Tuple[np.ndarray, int]:
+    """
+    Decodes audio bytes from any format (WAV, MP3, WebM, Opus, OGG, FLAC, M4A, AAC)
+    into a mono float32 numpy array.
+    """
+    if not audio_bytes or len(audio_bytes) == 0:
+        return np.zeros(0, dtype=np.float32), target_sr
+
+    bio = io.BytesIO(audio_bytes)
+
+    # 1. Try PyAV first (universal container decoder for WebM, Opus, MP4, etc.)
+    try:
+        import av
+        container = av.open(bio)
+        if len(container.streams.audio) > 0:
+            stream = container.streams.audio[0]
+            resampler = av.AudioResampler(format='fltp', layout='mono', rate=target_sr)
+            frames = []
+            for packet in container.demux(stream):
+                for frame in packet.decode():
+                    for res in resampler.resample(frame):
+                        frames.append(res.to_ndarray())
+            container.close()
+            if frames:
+                y = np.concatenate(frames, axis=1).squeeze()
+                if y.ndim > 1:
+                    y = np.mean(y, axis=0)
+                return y.astype(np.float32), target_sr
+    except Exception:
+        pass
+
+    # 2. Try soundfile
+    try:
+        bio.seek(0)
+        y, orig_sr = sf.read(bio)
+        if y.ndim > 1:
+            y = np.mean(y, axis=1)
+        if orig_sr != target_sr:
+            y = librosa.resample(y.astype(np.float32), orig_sr=orig_sr, target_sr=target_sr)
+        return y.astype(np.float32), target_sr
+    except Exception:
+        pass
+
+    # 3. Try librosa
+    try:
+        bio.seek(0)
+        y, sr = librosa.load(bio, sr=target_sr, mono=True)
+        return y.astype(np.float32), target_sr
+    except Exception:
+        pass
+
+    return np.zeros(0, dtype=np.float32), target_sr
+
+
+def audio_to_wav_bytes(y: np.ndarray, sr: int = 22050) -> bytes:
+    """Converts a float32 audio numpy array into standard 16-bit PCM WAV bytes."""
+    bio = io.BytesIO()
+    max_val = np.max(np.abs(y)) if len(y) > 0 else 0
+    if max_val > 1.0:
+        y_norm = y / max_val
+    else:
+        y_norm = y
+    sf.write(bio, y_norm.astype(np.float32), sr, format='WAV', subtype='PCM_16')
+    return bio.getvalue()
 
 
 def validate_audio_file(
@@ -17,7 +81,7 @@ def validate_audio_file(
     max_duration: float = 120.0
 ) -> Tuple[bool, str, Optional[float], Optional[int]]:
     """
-    Validate audio file for format, corruption, emptiness, and duration.
+    Validate audio file for format (WAV, MP3, WebM, FLAC, OGG, M4A, etc.), corruption, emptiness, and duration.
 
     Returns:
         Tuple of (is_valid, message, duration_seconds, sample_rate)
@@ -30,10 +94,53 @@ def validate_audio_file(
         return False, "Audio file is empty or contains no audio data (0 or invalid byte length).", None, None
 
     try:
-        # Check audio info using soundfile
-        info = sf.info(file_path)
-        duration = float(info.duration)
-        sr = int(info.samplerate)
+        duration = None
+        sr = None
+
+        # 1. Attempt header inspection via soundfile
+        try:
+            info = sf.info(file_path)
+            duration = float(info.duration)
+            sr = int(info.samplerate)
+        except Exception:
+            pass
+
+        # 2. Attempt PyAV inspection (great for WebM/Opus microphone streams)
+        if duration is None or sr is None or duration <= 0:
+            try:
+                import av
+                container = av.open(file_path)
+                if len(container.streams.audio) > 0:
+                    stream = container.streams.audio[0]
+                    sr = stream.rate or 22050
+                    if stream.duration is not None and stream.time_base is not None:
+                        duration = float(stream.duration * stream.time_base)
+                    elif container.duration is not None:
+                        duration = float(container.duration / av.time.AV_TIME_BASE)
+                container.close()
+            except Exception:
+                pass
+
+        # 3. Fallback for MP3 or non-standard container formats via librosa
+        if duration is None or sr is None or duration <= 0:
+            try:
+                duration = float(librosa.get_duration(path=file_path))
+                y_probe, sr_probe = librosa.load(file_path, sr=None, duration=0.25, mono=True)
+                sr = int(sr_probe)
+            except Exception:
+                # 4. Try decoding full bytes directly
+                try:
+                    with open(file_path, 'rb') as f:
+                        raw_bytes = f.read()
+                    y_dec, sr_dec = decode_audio_bytes(raw_bytes, target_sr=config.SR)
+                    if len(y_dec) > 0:
+                        duration = float(len(y_dec) / sr_dec)
+                        sr = int(sr_dec)
+                except Exception as dec_err:
+                    return False, f"Unsupported audio format or unreadable stream: {str(dec_err)}", None, None
+
+        if duration is None or sr is None or duration <= 0:
+            return False, "Unable to determine audio duration or sample rate.", None, None
 
         if duration < min_duration:
             return False, f"Audio is too short ({duration:.2f}s). Minimum required duration is {min_duration}s.", duration, sr
@@ -41,9 +148,16 @@ def validate_audio_file(
         if duration > max_duration:
             return False, f"Audio is too long ({duration:.1f}s). Maximum allowed duration is {max_duration}s.", duration, sr
 
-        # Test loading a small portion to ensure decodable
-        y_test, _ = librosa.load(file_path, sr=None, duration=min(duration, 1.0), mono=True)
-        if len(y_test) == 0:
+        # Test loading a small portion to ensure decodable audio stream
+        y_test = None
+        try:
+            y_test, _ = librosa.load(file_path, sr=None, duration=min(duration, 1.0), mono=True)
+        except Exception:
+            with open(file_path, 'rb') as f:
+                raw_bytes = f.read()
+            y_test, _ = decode_audio_bytes(raw_bytes, target_sr=config.SR)
+
+        if y_test is None or len(y_test) == 0:
             return False, "Audio file contains zero decodable samples.", duration, sr
 
         if np.isnan(y_test).any() or np.isinf(y_test).any():
@@ -60,18 +174,20 @@ def validate_audio_file(
 def load_ravdess_metadata(dataset_path: str) -> pd.DataFrame:
     """
     Parse RAVDESS filenames to extract emotion labels, actor IDs, etc.
-    RAVDESS filename format: {modality}-{vocal_channel}-{emotion}-{intensity}-{statement}-{repetition}-{actor}.wav
+    RAVDESS filename format: {modality}-{vocal_channel}-{emotion}-{intensity}-{statement}-{repetition}-{actor}.{ext}
     Emotion codes: 01=neutral, 02=calm, 03=happy, 04=sad, 05=angry, 06=fearful, 07=disgust, 08=surprised
     """
     metadata = []
     if not os.path.exists(dataset_path):
         return pd.DataFrame()
 
+    supported_exts = tuple(getattr(config, 'SUPPORTED_AUDIO_EXTENSIONS', ['.wav', '.mp3', '.flac', '.ogg']))
+
     for root, _, files in os.walk(dataset_path):
         for file in sorted(files):
-            if file.endswith('.wav') and not file.startswith('.'):
+            if any(file.lower().endswith(ext) for ext in supported_exts) and not file.startswith('.'):
                 file_path = os.path.join(root, file)
-                parts = file.split('.')[0].split('-')
+                parts = os.path.splitext(file)[0].split('-')
                 if len(parts) == 7:
                     try:
                         metadata.append({
@@ -102,7 +218,12 @@ def load_audio(file_path: str, sr: int = 22050, duration: float = 3.0) -> Tuple[
         Tuple of (audio_array, sample_rate)
     """
     try:
-        y, loaded_sr = librosa.load(file_path, sr=sr, mono=True)
+        try:
+            y, loaded_sr = librosa.load(file_path, sr=sr, mono=True)
+        except Exception:
+            with open(file_path, 'rb') as f:
+                raw_bytes = f.read()
+            y, loaded_sr = decode_audio_bytes(raw_bytes, target_sr=sr)
 
         # Trim silence
         if len(y) > 0:
@@ -131,7 +252,13 @@ def load_audio_raw(file_path: str, sr: int = 22050) -> Tuple[np.ndarray, int]:
     Load audio without trimming/padding — for full-length acoustic visualization.
     """
     try:
-        y, loaded_sr = librosa.load(file_path, sr=sr, mono=True)
+        try:
+            y, loaded_sr = librosa.load(file_path, sr=sr, mono=True)
+        except Exception:
+            with open(file_path, 'rb') as f:
+                raw_bytes = f.read()
+            y, loaded_sr = decode_audio_bytes(raw_bytes, target_sr=sr)
+
         if len(y) > 0 and np.max(np.abs(y)) > 0:
             y = librosa.util.normalize(y)
         return y, sr

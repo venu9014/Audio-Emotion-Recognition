@@ -9,6 +9,8 @@ import traceback
 
 import numpy as np
 import pandas as pd
+import librosa
+import soundfile as sf
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
@@ -29,7 +31,8 @@ st.set_page_config(
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import config
 from src.preprocessing import (
-    load_audio, load_audio_raw, load_ravdess_metadata, validate_audio_file
+    load_audio, load_audio_raw, load_ravdess_metadata, validate_audio_file,
+    decode_audio_bytes, audio_to_wav_bytes
 )
 from src.feature_extraction import (
     extract_mel_spectrogram, extract_mfcc, extract_audio_features
@@ -45,6 +48,15 @@ from src.visualization import (
     plot_training_curves, plot_emotion_distribution, plot_model_comparison
 )
 from src.report import generate_html_report
+
+
+def get_audio_mime(filename: str = None) -> str:
+    """Return appropriate audio MIME type based on file extension."""
+    if not filename:
+        return 'audio/wav'
+    ext = os.path.splitext(filename)[1].lower()
+    return getattr(config, 'AUDIO_MIME_TYPES', {}).get(ext, 'audio/wav')
+
 
 # ---------------------------------------------------------
 # 3. CSS STYLING — SONORA EDITORIAL AUDIO-LAB DESIGN
@@ -301,6 +313,7 @@ state_defaults = {
     'audio_features': None,
     'mfcc_n': 40,
     'spec_mels': 128,
+    'trigger_analyze_now': False,
 }
 for key, val in state_defaults.items():
     if key not in st.session_state:
@@ -321,6 +334,49 @@ def get_model_and_encoder(model_name: str):
         return None, None, str(fnf)
     except Exception as ex:
         return None, None, f"Error loading {model_name}: {str(ex)}"
+
+
+def execute_ser_pipeline(model_type: str, audio_data: np.ndarray, audio_sr: int, audio_name: str):
+    """
+    Executes the Speech Emotion Recognition inference pipeline,
+    extracts features, computes timeline segments, and updates session state & history.
+    Returns (success: bool, error_msg: str | None).
+    """
+    if audio_data is None or len(audio_data) == 0:
+        return False, "No audio signal loaded to analyze."
+
+    loaded_model, loaded_encoder, load_err = get_model_and_encoder(model_type)
+    if loaded_model is None or loaded_encoder is None:
+        return False, f"Model '{model_type.upper()}' is not trained yet. Run: python src/train.py --model {model_type}"
+
+    try:
+        if np.max(np.abs(audio_data)) > 0:
+            audio_norm = librosa.util.normalize(audio_data)
+        else:
+            audio_norm = audio_data
+
+        result = predict_emotion(audio_norm, loaded_model, loaded_encoder, sr=audio_sr)
+        timeline = predict_segments(audio_norm, loaded_model, loaded_encoder, sr=audio_sr, min_duration_for_timeline=4.0)
+        features = extract_audio_features(audio_norm, audio_sr)
+
+        st.session_state.analysis_results = result
+        st.session_state.timeline_results = timeline
+        st.session_state.audio_features = features
+
+        history_entry = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "filename": audio_name or "Voice Recording",
+            "duration": round(len(audio_data) / audio_sr, 2),
+            "model": model_type.upper(),
+            "emotion": result['emotion'],
+            "confidence": round(result['confidence'], 4),
+            "confidence_pct": f"{result['confidence']*100:.1f}%",
+            "top_3": ", ".join([f"{item['emotion']} ({item['confidence_pct']}%)" for item in result.get('top_3', [])])
+        }
+        st.session_state.predictions_history.insert(0, history_entry)
+        return True, None
+    except Exception as ex:
+        return False, f"Inference pipeline failed: {str(ex)}\n{traceback.format_exc()}"
 
 # ---------------------------------------------------------
 # 6. NAVIGATION BAR
@@ -488,37 +544,123 @@ elif st.session_state.page == "ANALYZE":
     # 2. Audio Source Selection (Upload / Record / Sample Library)
     st.markdown("### 2. Audio Input")
 
-    tab_upload, tab_record, tab_samples = st.tabs(["📤 Upload WAV File", "🎙️ Record Microphone", "🎵 Demo Audio Library"])
+    tab_upload, tab_record, tab_samples = st.tabs(["📤 Upload Audio (WAV / MP3)", "🎙️ Record Microphone (Live Audio)", "🎵 Demo Audio Library"])
 
     input_audio_bytes = None
     input_audio_name = None
 
     with tab_upload:
-        uploaded_file = st.file_uploader("Upload audio in WAV format", type=['wav'], key="uploader_wav")
+        uploaded_file = st.file_uploader(
+            "Upload audio file (WAV, MP3, FLAC, OGG, M4A)",
+            type=['wav', 'mp3', 'flac', 'ogg', 'm4a', 'aac', 'wma'],
+            key="uploader_audio"
+        )
         if uploaded_file is not None:
             input_audio_bytes = uploaded_file.read()
             input_audio_name = uploaded_file.name
+            st.markdown(f"**Loaded File:** `{uploaded_file.name}`")
+            
+            up_col1, up_col2 = st.columns([1.5, 1])
+            with up_col1:
+                if st.button("⚡ ANALYZE UPLOADED AUDIO NOW", type="primary", key="btn_analyze_upload_direct", use_container_width=True):
+                    y_up, sr_up = decode_audio_bytes(input_audio_bytes, target_sr=config.SR)
+                    if len(y_up) > 0:
+                        if np.max(np.abs(y_up)) > 0:
+                            y_up = librosa.util.normalize(y_up)
+                        st.session_state.audio_bytes = input_audio_bytes
+                        st.session_state.audio_name = input_audio_name
+                        st.session_state.audio_data = y_up
+                        st.session_state.audio_sr = sr_up
+                        st.session_state.audio_duration = float(len(y_up) / sr_up)
+                        with st.spinner("Classifying vocal affect..."):
+                            ok, err = execute_ser_pipeline(st.session_state.model_type, y_up, sr_up, input_audio_name)
+                            if ok:
+                                st.rerun()
+                            else:
+                                st.error(err)
+            with up_col2:
+                if st.button("🎛️ Open in Audio Lab", key="btn_up_audio_lab", use_container_width=True):
+                    y_up, sr_up = decode_audio_bytes(input_audio_bytes, target_sr=config.SR)
+                    if len(y_up) > 0:
+                        st.session_state.audio_bytes = input_audio_bytes
+                        st.session_state.audio_name = input_audio_name
+                        st.session_state.audio_data = y_up
+                        st.session_state.audio_sr = sr_up
+                        st.session_state.audio_duration = float(len(y_up) / sr_up)
+                        st.session_state.page = "AUDIO LAB"
+                        st.rerun()
+        else:
+            st.button("⚡ ANALYZE UPLOADED AUDIO (Upload an audio file above to enable)", disabled=True, key="btn_up_disabled", use_container_width=True)
 
     with tab_record:
+        st.markdown("#### 🎙️ Live Voice Recording & Real-Time Emotion Classification")
+        st.markdown(
+            "<p style='color: var(--text-secondary); font-size: 0.92rem; margin-bottom: 12px;'>"
+            "<strong>How to use:</strong><br>"
+            "1. Click the microphone button below to start recording.<br>"
+            "2. Speak into your microphone with emotional intonation (3 to 5 seconds recommended).<br>"
+            "3. Click the stop button to finish recording.<br>"
+            "4. Click <strong>⚡ ANALYZE RECORDED VOICE NOW</strong> to classify emotion."
+            "</p>",
+            unsafe_allow_html=True
+        )
         if hasattr(st, 'audio_input'):
-            recorded_audio = st.audio_input("Record voice sample (speak for 3-5 seconds)", key="mic_recorder")
+            recorded_audio = st.audio_input("Record voice sample from your microphone", key="mic_recorder")
             if recorded_audio is not None:
-                input_audio_bytes = recorded_audio.read()
-                input_audio_name = "mic_recording.wav"
+                raw_mic_bytes = recorded_audio.getvalue()
+                if raw_mic_bytes and len(raw_mic_bytes) > 0:
+                    y_mic, sr_mic = decode_audio_bytes(raw_mic_bytes, target_sr=config.SR)
+                    if len(y_mic) > 0:
+                        dur_m = float(len(y_mic) / sr_mic)
+                        clean_wav = audio_to_wav_bytes(y_mic, sr_mic)
+                        input_audio_bytes = clean_wav
+                        input_audio_name = "Live Microphone Recording"
+                        
+                        # Auto-update active audio state
+                        st.session_state.audio_bytes = clean_wav
+                        st.session_state.audio_name = "Live Microphone Recording"
+                        st.session_state.audio_data = y_mic
+                        st.session_state.audio_sr = sr_mic
+                        st.session_state.audio_duration = dur_m
+                        
+                        st.success(f"✅ Voice recorded: **{dur_m:.2f} seconds** ({sr_mic} Hz)")
+                        st.audio(clean_wav, format='audio/wav')
+                        
+                        rec_btn_c1, rec_btn_c2 = st.columns([1.5, 1])
+                        with rec_btn_c1:
+                            if st.button("⚡ ANALYZE RECORDED VOICE NOW", type="primary", key="btn_analyze_mic_direct", use_container_width=True):
+                                with st.spinner(f"Analyzing live voice with {st.session_state.model_type.upper()}..."):
+                                    ok, err = execute_ser_pipeline(st.session_state.model_type, y_mic, sr_mic, "Live Microphone Recording")
+                                    if ok:
+                                        st.rerun()
+                                    else:
+                                        st.error(err)
+                        with rec_btn_c2:
+                            if st.button("🎛️ Open in Audio Lab", key="btn_mic_audio_lab", use_container_width=True):
+                                st.session_state.page = "AUDIO LAB"
+                                st.rerun()
+                    else:
+                        st.warning("⚠️ Microphone captured 0 decodable audio frames. Please check microphone permissions and speak louder.")
+                        st.button("⚡ ANALYZE RECORDED VOICE (No audio detected)", disabled=True, key="btn_mic_empty_disabled", use_container_width=True)
+            else:
+                st.info("🎙️ Speak into your microphone and click stop recording above. Once recorded, the **⚡ Analyze Live Voice** button will activate.")
+                st.button("⚡ ANALYZE RECORDED VOICE (Record your voice above to enable)", disabled=True, key="btn_mic_disabled", use_container_width=True)
         else:
-            st.info("Browser microphone recording requires Streamlit >= 1.39. Please upload a WAV file.")
+            st.info("Browser microphone recording requires Streamlit >= 1.39. Please upload an audio file.")
 
     with tab_samples:
         st.write("Select a pre-synthesized acoustic demo voice representing each of the 8 emotions (or multi-emotion speech):")
+        demo_fmt = st.radio("Demo Format:", ["WAV", "MP3"], horizontal=True, key="demo_audio_format")
+        sample_ext = ".mp3" if demo_fmt == "MP3" else ".wav"
         samples_dir = os.path.join(config.PROJECT_ROOT, "samples")
         
         # Row 1: First 4 emotions
         row1_cols = st.columns(4)
         row1_samples = [
-            ("😐 Neutral (3.2s)", "demo_neutral.wav"),
-            ("😌 Calm (3.2s)", "demo_calm.wav"),
-            ("😊 Happy (3.2s)", "demo_happy.wav"),
-            ("😢 Sad (3.2s)", "demo_sad.wav"),
+            ("😐 Neutral (3.2s)", f"demo_neutral{sample_ext}"),
+            ("😌 Calm (3.2s)", f"demo_calm{sample_ext}"),
+            ("😊 Happy (3.2s)", f"demo_happy{sample_ext}"),
+            ("😢 Sad (3.2s)", f"demo_sad{sample_ext}"),
         ]
         for idx, (label, sfile) in enumerate(row1_samples):
             with row1_cols[idx]:
@@ -535,10 +677,10 @@ elif st.session_state.page == "ANALYZE":
         # Row 2: Next 4 emotions
         row2_cols = st.columns(4)
         row2_samples = [
-            ("😡 Angry (3.2s)", "demo_angry.wav"),
-            ("😨 Fearful (3.2s)", "demo_fearful.wav"),
-            ("🤢 Disgust (3.2s)", "demo_disgust.wav"),
-            ("😲 Surprised (3.2s)", "demo_surprised.wav"),
+            ("😡 Angry (3.2s)", f"demo_angry{sample_ext}"),
+            ("😨 Fearful (3.2s)", f"demo_fearful{sample_ext}"),
+            ("🤢 Disgust (3.2s)", f"demo_disgust{sample_ext}"),
+            ("😲 Surprised (3.2s)", f"demo_surprised{sample_ext}"),
         ]
         for idx, (label, sfile) in enumerate(row2_samples):
             with row2_cols[idx]:
@@ -553,48 +695,70 @@ elif st.session_state.page == "ANALYZE":
                             input_audio_name = sfile
 
         # Row 3: Multi-Emotion Long Audio for Timeline Analysis
-        long_path = os.path.join(samples_dir, "sample_long_speech.wav")
-        if st.button("⏱️ Long Speech (6.5s — Calm + Happy for Timeline Dynamics)", key="btn_demo_long_speech", use_container_width=True):
+        long_path = os.path.join(samples_dir, f"sample_long_speech{sample_ext}")
+        if st.button(f"⏱️ Long Speech (6.5s — Calm + Happy in {demo_fmt})", key="btn_demo_long_speech", use_container_width=True):
             if os.path.exists(long_path):
                 with open(long_path, 'rb') as f:
                     input_audio_bytes = f.read()
-                    input_audio_name = "sample_long_speech.wav"
+                    input_audio_name = f"sample_long_speech{sample_ext}"
 
     # Load into session state if new audio is provided
     if input_audio_bytes is not None and (st.session_state.audio_bytes != input_audio_bytes):
-        # Save to temporary file for validation
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp:
-            tmp.write(input_audio_bytes)
-            tmp_path = tmp.name
-
-        try:
-            # Robust Audio Validation (Requirement 14)
-            is_valid, val_msg, dur_sec, file_sr = validate_audio_file(tmp_path)
-            if not is_valid:
-                st.error(f"❌ Invalid Audio: {val_msg}")
+        # 1. Attempt universal in-memory decoding
+        y_decoded, sr_decoded = decode_audio_bytes(input_audio_bytes, target_sr=config.SR)
+        
+        if len(y_decoded) > 0:
+            dur_sec = float(len(y_decoded) / sr_decoded)
+            if dur_sec < 0.5:
+                st.error(f"❌ Invalid Audio: Audio is too short ({dur_sec:.2f}s). Minimum required duration is 0.5s.")
+            elif dur_sec > 120.0:
+                st.error(f"❌ Invalid Audio: Audio is too long ({dur_sec:.1f}s). Maximum allowed duration is 120.0s.")
+            elif np.isnan(y_decoded).any() or np.isinf(y_decoded).any():
+                st.error("❌ Invalid Audio: Audio contains corrupted numerical data (NaN or Inf values).")
             else:
-                y_raw, sr = load_audio_raw(tmp_path, sr=config.SR)
-                st.session_state.audio_bytes = input_audio_bytes
+                if np.max(np.abs(y_decoded)) > 0:
+                    y_decoded = librosa.util.normalize(y_decoded)
+
+                # Ensure clean audio bytes for browser playback
+                if input_audio_name and input_audio_name.endswith('.wav'):
+                    clean_playback_bytes = audio_to_wav_bytes(y_decoded, sr_decoded)
+                else:
+                    clean_playback_bytes = input_audio_bytes
+
+                st.session_state.audio_bytes = clean_playback_bytes
                 st.session_state.audio_name = input_audio_name
-                st.session_state.audio_data = y_raw
-                st.session_state.audio_sr = sr
+                st.session_state.audio_data = y_decoded
+                st.session_state.audio_sr = sr_decoded
                 st.session_state.audio_duration = dur_sec
                 # Reset previous analysis for the new audio
                 st.session_state.analysis_results = None
                 st.session_state.timeline_results = None
                 st.session_state.audio_features = None
                 st.rerun()
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
+        else:
+            # Fallback file validation for edge cases / tests
+            file_ext = os.path.splitext(input_audio_name)[1].lower() if input_audio_name else '.wav'
+            if not file_ext or file_ext not in getattr(config, 'SUPPORTED_AUDIO_EXTENSIONS', ['.wav', '.mp3']):
+                file_ext = '.wav'
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
+                tmp.write(input_audio_bytes)
+                tmp_path = tmp.name
+
+            try:
+                is_valid, val_msg, dur_sec, file_sr = validate_audio_file(tmp_path)
+                if not is_valid:
+                    st.error(f"❌ Invalid Audio: {val_msg}")
+            finally:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
 
     # 3. Audio Preview & Waveform
     if st.session_state.audio_data is not None:
         st.markdown("### 3. Audio Preview & Acoustics")
         p_col1, p_col2 = st.columns([1, 2])
         with p_col1:
-            st.write(f"**Loaded File:** `{st.session_state.audio_name}`")
-            st.audio(st.session_state.audio_bytes, format='audio/wav')
+            st.write(f"**Loaded Signal:** `{st.session_state.audio_name}`")
+            st.audio(st.session_state.audio_bytes, format=get_audio_mime(st.session_state.audio_name))
 
             dur_sec = len(st.session_state.audio_data) / st.session_state.audio_sr
             stat_c1, stat_c2 = st.columns(2)
@@ -631,78 +795,22 @@ elif st.session_state.page == "ANALYZE":
             analyze_clicked = st.button(
                 f"🔬 ANALYZE VOICE AFFECT ({st.session_state.model_type.upper()})",
                 type="primary",
+                key="btn_main_analyze_trigger",
                 use_container_width=True
             )
 
         if analyze_clicked:
-            # Check model availability (Requirement 13)
-            loaded_model, loaded_encoder, load_err = get_model_and_encoder(st.session_state.model_type)
-
-            if loaded_model is None or loaded_encoder is None:
-                st.error("## MODEL NOT TRAINED")
-                st.markdown(f"""
-                The selected model (**{st.session_state.model_type.upper()}**) is not trained yet.
-                To train the model on the RAVDESS dataset, run:
-                ```bash
-                python src/train.py --model {st.session_state.model_type}
-                ```
-                """)
-            else:
-                anim_container = st.empty()
-                stages = [
-                    ("🎧", "DIGITIZING ACOUSTIC WAVEFORM..."),
-                    ("🌈", "SYNTHESIZING 128-BAND LOG-MEL SPECTROGRAM..."),
-                    ("🧠", f"INFERRING SPATIAL PATTERNS VIA {st.session_state.model_type.upper()}..."),
-                    ("⏱️", "RESOLVING TEMPORAL EMOTION TRAJECTORIES..."),
-                    ("✨", "FINALIZING PROBABILITY PROFILE...")
-                ]
-                for icon, text in stages:
-                    anim_container.markdown(f"<div style='text-align:center; padding:1.5rem; font-weight:700; color:var(--accent-cyan); font-size:1.2rem;'>{icon} {text}</div>", unsafe_allow_html=True)
-                    time.sleep(0.4)
-
-                try:
-                    # Run predictions
-                    result = predict_emotion(
-                        st.session_state.audio_data,
-                        loaded_model,
-                        loaded_encoder,
-                        sr=st.session_state.audio_sr
-                    )
-                    timeline = predict_segments(
-                        st.session_state.audio_data,
-                        loaded_model,
-                        loaded_encoder,
-                        sr=st.session_state.audio_sr,
-                        min_duration_for_timeline=4.0
-                    )
-                    features = extract_audio_features(
-                        st.session_state.audio_data,
-                        st.session_state.audio_sr
-                    )
-
-                    st.session_state.analysis_results = result
-                    st.session_state.timeline_results = timeline
-                    st.session_state.audio_features = features
-
-                    # Store in History (Requirement 9)
-                    history_entry = {
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "filename": st.session_state.audio_name,
-                        "duration": round(len(st.session_state.audio_data) / st.session_state.audio_sr, 2),
-                        "model": st.session_state.model_type.upper(),
-                        "emotion": result['emotion'],
-                        "confidence": round(result['confidence'], 4),
-                        "confidence_pct": f"{result['confidence']*100:.1f}%",
-                        "top_3": ", ".join([f"{item['emotion']} ({item['confidence_pct']}%)" for item in result.get('top_3', [])])
-                    }
-                    st.session_state.predictions_history.insert(0, history_entry)
-                    anim_container.empty()
+            with st.spinner(f"Extracting acoustic features and inferring affect with {st.session_state.model_type.upper()}..."):
+                ok, err = execute_ser_pipeline(
+                    st.session_state.model_type,
+                    st.session_state.audio_data,
+                    st.session_state.audio_sr,
+                    st.session_state.audio_name
+                )
+                if ok:
                     st.rerun()
-
-                except Exception as e:
-                    anim_container.empty()
-                    st.error(f"Prediction failed: {str(e)}")
-                    st.error(traceback.format_exc())
+                else:
+                    st.error(f"## Inference Error\n{err}")
 
     # 5. Display Analysis Results
     if st.session_state.analysis_results:
@@ -849,30 +957,155 @@ elif st.session_state.page == "ANALYZE":
 # =========================================================
 elif st.session_state.page == "AUDIO LAB":
     st.markdown("<h2>🎛️ Audio Signal Processing Workstation</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='color: var(--text-secondary);'>Interactive signal inspection, filterbanks, MFCCs, and spectral distributions.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='color: var(--text-secondary);'>Interactive digital signal processing, filterbanks, MFCCs, and spectral distributions.</p>", unsafe_allow_html=True)
 
     if st.session_state.audio_data is None:
-        st.info("No audio signal loaded yet. Please upload or record audio on the ANALYZE page.")
-        if st.button("← Go to Analyze to Load Audio", type="primary"):
+        st.info("💡 No active audio signal loaded. Upload or record audio below to begin acoustic inspection:")
+        
+        lab_up_tab1, lab_up_tab2, lab_up_tab3 = st.tabs(["📤 Upload Audio", "🎙️ Record Microphone", "🎵 Demo Audio Library"])
+        
+        lab_audio_bytes = None
+        lab_audio_name = None
+        
+        with lab_up_tab1:
+            lab_up_file = st.file_uploader(
+                "Upload audio file (WAV, MP3, FLAC, OGG, M4A)",
+                type=['wav', 'mp3', 'flac', 'ogg', 'm4a', 'aac', 'wma'],
+                key="lab_uploader_audio"
+            )
+            if lab_up_file is not None:
+                lab_audio_bytes = lab_up_file.read()
+                lab_audio_name = lab_up_file.name
+                
+        with lab_up_tab2:
+            st.markdown("#### 🎙️ Live Voice Recording")
+            if hasattr(st, 'audio_input'):
+                lab_rec = st.audio_input("Record voice sample from microphone", key="lab_mic_recorder")
+                if lab_rec is not None:
+                    raw_bytes = lab_rec.getvalue()
+                    if raw_bytes and len(raw_bytes) > 0:
+                        y_m, sr_m = decode_audio_bytes(raw_bytes, target_sr=config.SR)
+                        if len(y_m) > 0:
+                            dur_lab = float(len(y_m) / sr_m)
+                            lab_audio_bytes = audio_to_wav_bytes(y_m, sr_m)
+                            lab_audio_name = "Live Microphone Recording"
+                            st.success(f"✅ Voice recorded: **{dur_lab:.2f} s** ({sr_m} Hz)")
+                            st.audio(lab_audio_bytes, format='audio/wav')
+                            if st.button("⚡ ANALYZE RECORDING IN AUDIO LAB", type="primary", key="btn_lab_mic_analyze", use_container_width=True):
+                                if np.max(np.abs(y_m)) > 0:
+                                    y_m = librosa.util.normalize(y_m)
+                                st.session_state.audio_bytes = lab_audio_bytes
+                                st.session_state.audio_name = lab_audio_name
+                                st.session_state.audio_data = y_m
+                                st.session_state.audio_sr = sr_m
+                                st.session_state.audio_duration = dur_lab
+                                with st.spinner("Analyzing audio in Audio Lab..."):
+                                    execute_ser_pipeline(st.session_state.model_type, y_m, sr_m, lab_audio_name)
+                                st.rerun()
+                        else:
+                            st.warning("⚠️ Microphone captured 0 decodable audio frames.")
+                else:
+                    st.info("🎙️ Speak into microphone and stop recording. Click the **⚡ Analyze Recording** button to load.")
+                    st.button("⚡ ANALYZE RECORDING (Record voice first to enable)", disabled=True, key="btn_lab_mic_disabled", use_container_width=True)
+            else:
+                st.info("Browser microphone recording requires Streamlit >= 1.39.")
+                
+        with lab_up_tab3:
+            st.write("Pick a pre-synthesized acoustic demo:")
+            lab_demo_cols = st.columns(4)
+            demo_choices = [
+                ("😊 Happy", "demo_happy.wav"),
+                ("😢 Sad", "demo_sad.wav"),
+                ("😡 Angry", "demo_angry.wav"),
+                ("😌 Calm", "demo_calm.wav"),
+            ]
+            samples_dir = os.path.join(config.PROJECT_ROOT, "samples")
+            for idx, (label, sfile) in enumerate(demo_choices):
+                with lab_demo_cols[idx]:
+                    if st.button(label, key=f"btn_lab_demo_{sfile}", use_container_width=True):
+                        s_path = os.path.join(samples_dir, sfile)
+                        if not os.path.exists(s_path):
+                            alt = sfile.replace("demo_", "sample_")
+                            s_path = os.path.join(samples_dir, alt) if os.path.exists(os.path.join(samples_dir, alt)) else s_path
+                        if os.path.exists(s_path):
+                            with open(s_path, 'rb') as f:
+                                lab_audio_bytes = f.read()
+                                lab_audio_name = sfile
+                                
+        if lab_audio_bytes is not None:
+            y_dec, sr_dec = decode_audio_bytes(lab_audio_bytes, target_sr=config.SR)
+            if len(y_dec) > 0:
+                if np.max(np.abs(y_dec)) > 0:
+                    y_dec = librosa.util.normalize(y_dec)
+                st.session_state.audio_bytes = lab_audio_bytes
+                st.session_state.audio_name = lab_audio_name
+                st.session_state.audio_data = y_dec
+                st.session_state.audio_sr = sr_dec
+                st.session_state.audio_duration = float(len(y_dec) / sr_dec)
+                st.rerun()
+
+        st.markdown("---")
+        if st.button("← Switch to Main ANALYZE Dashboard", type="secondary"):
             st.session_state.page = "ANALYZE"
             st.rerun()
     else:
         y = st.session_state.audio_data
         sr = st.session_state.audio_sr
 
-        # Top Audio Header
-        top_col1, top_col2, top_col3 = st.columns([2, 1, 1])
+        # Top Audio Header & Controls
+        top_col1, top_col2, top_col3 = st.columns([2, 1, 1.2])
         with top_col1:
             st.write(f"**Active Signal:** `{st.session_state.audio_name}`")
-            st.audio(st.session_state.audio_bytes, format='audio/wav')
+            st.audio(st.session_state.audio_bytes, format=get_audio_mime(st.session_state.audio_name))
         with top_col2:
             st.metric("Total Samples", f"{len(y):,}")
             st.metric("Duration", f"{len(y)/sr:.2f} s")
         with top_col3:
             st.metric("Sample Rate", f"{sr} Hz")
-            if st.button("← Back to Analyze", use_container_width=True):
-                st.session_state.page = "ANALYZE"
-                st.rerun()
+            
+            # Action Buttons: Analyze Button for Audio Lab Page
+            btn_act1, btn_act2 = st.columns(2)
+            with btn_act1:
+                run_lab_analyze = st.button("⚡ ANALYZE", type="primary", use_container_width=True, help="Run deep emotion classification on this audio")
+            with btn_act2:
+                if st.button("📋 Full Report", use_container_width=True, help="Open full emotion results on Analyze page"):
+                    st.session_state.page = "ANALYZE"
+                    st.rerun()
+
+        # Handle direct Analyze execution from Audio Lab
+        if 'run_lab_analyze' in locals() and run_lab_analyze:
+            with st.spinner("Classifying vocal affect..."):
+                ok, err = execute_ser_pipeline(
+                    st.session_state.model_type,
+                    st.session_state.audio_data,
+                    st.session_state.audio_sr,
+                    st.session_state.audio_name
+                )
+                if ok:
+                    st.success(f"Affect Classified: **{st.session_state.analysis_results['emotion'].upper()}** ({st.session_state.analysis_results['confidence']*100:.1f}% confidence)")
+                else:
+                    st.error(err)
+
+        # If analysis results are already computed, display a compact summary banner in Audio Lab
+        if st.session_state.analysis_results is not None:
+            res_summary = st.session_state.analysis_results
+            p_emo = res_summary['emotion']
+            p_conf = res_summary['confidence'] * 100
+            p_color = config.EMOTION_COLORS.get(p_emo, '#6366f1')
+            p_emoji = config.EMOTION_EMOJIS.get(p_emo, '🎭')
+            
+            st.markdown(f"""
+            <div style='background: rgba(18, 25, 44, 0.7); border: 1px solid rgba(255,255,255,0.1); border-left: 4px solid {p_color}; border-radius: 10px; padding: 12px 18px; margin: 12px 0; display: flex; align-items: center; justify-content: space-between;'>
+                <div>
+                    <span style='font-size: 1.4rem; margin-right: 8px;'>{p_emoji}</span>
+                    <strong style='font-size: 1.1rem; color: #fff;'>Predicted Affect: <span style='color:{p_color}; text-transform: uppercase;'>{p_emo}</span></strong>
+                    <span style='color: var(--text-secondary); margin-left: 12px;'>Confidence: <strong>{p_conf:.1f}%</strong> ({res_summary.get('confidence_level', 'High')})</span>
+                </div>
+                <div>
+                    <span style='font-size: 0.85rem; color: var(--accent-cyan);'>Model: {st.session_state.model_type.upper()}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
         st.markdown("---")
 

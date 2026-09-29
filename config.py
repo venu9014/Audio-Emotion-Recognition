@@ -22,6 +22,18 @@ N_FFT = 2048
 HOP_LENGTH = 512
 N_MFCC = 40
 
+# Supported Audio Formats
+SUPPORTED_AUDIO_EXTENSIONS = ['.wav', '.mp3', '.flac', '.ogg', '.m4a', '.wma', '.aac']
+AUDIO_MIME_TYPES = {
+    '.mp3': 'audio/mp3',
+    '.wav': 'audio/wav',
+    '.ogg': 'audio/ogg',
+    '.flac': 'audio/flac',
+    '.m4a': 'audio/mp4',
+    '.aac': 'audio/aac',
+    '.wma': 'audio/x-ms-wma'
+}
+
 # Training parameters
 BATCH_SIZE = 32
 EPOCHS = 50

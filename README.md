@@ -26,13 +26,13 @@ The project features a high-performance **AI Audio Laboratory** Streamlit interf
 - **Dual Inference Architecture with Dynamic Selection**:
   - **CNN-LSTM (Main)**: Spatiotemporal feature extraction via Conv2D + Temporal Permute + LSTM(128).
   - **CNN Baseline**: Pure spatial spectral convolutions + Global Average Pooling.
-- **Microphone Recording & Audio Upload**: Supports browser recording via `st.audio_input` and `.wav` file uploads.
-- **Pre-Synthesized Demo Audio Library**: Immediate one-click testing of Neutral, Happy, Angry, and 6.5s Multi-Emotion speech without needing external audio.
+- **Microphone Recording & Audio Upload**: Supports browser recording via `st.audio_input` and multi-format audio file uploads (**MP3**, **WAV**, **FLAC**, **OGG**, **M4A**).
+- **Pre-Synthesized Demo Audio Library**: Immediate one-click testing of Neutral, Happy, Angry, and 6.5s Multi-Emotion speech in both **WAV and MP3** formats without needing external audio.
 
 ### 🛡️ Robust Audio Validation (Requirement 14)
 - **Empty / 0-byte File Detection**: Rejects empty or corrupt audio with actionable error notices.
 - **Duration Boundary Enforcement**: Validates length; handles short audio (<0.5s) and limits long audio safely.
-- **Format Integrity**: Strict WAV header validation and non-finite value checking (NaN / Inf protection).
+- **Format & Codec Integrity**: Multi-format stream validation (MP3, WAV, FLAC, OGG) with Libsndfile / Librosa fallback and non-finite value checking (NaN / Inf protection).
 
 ### 🧬 Signal Processing & Audio Lab (Requirement 4 & 20)
 - **Time-Domain Waveform**: Normalized acoustic pressure tracking.

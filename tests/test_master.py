@@ -11,7 +11,8 @@ import pandas as pd
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from src.preprocessing import (
-    load_audio, load_audio_raw, validate_audio_file, load_ravdess_metadata
+    load_audio, load_audio_raw, validate_audio_file, load_ravdess_metadata,
+    decode_audio_bytes, audio_to_wav_bytes
 )
 from src.feature_extraction import (
     extract_mel_spectrogram, extract_mfcc, extract_audio_features
@@ -40,6 +41,13 @@ class TestMasterEmotionSystem(unittest.TestCase):
         cls.long_wav = os.path.join(cls.samples_dir, "sample_long_speech.wav")
         cls.short_wav = os.path.join(cls.samples_dir, "sample_too_short.wav")
         cls.corrupted_wav = os.path.join(cls.samples_dir, "sample_corrupted.wav")
+        
+        # MP3 test fixtures
+        cls.neutral_mp3 = os.path.join(cls.samples_dir, "sample_neutral.mp3")
+        cls.happy_mp3 = os.path.join(cls.samples_dir, "sample_happy.mp3")
+        cls.long_mp3 = os.path.join(cls.samples_dir, "sample_long_speech.mp3")
+        cls.short_mp3 = os.path.join(cls.samples_dir, "sample_too_short.mp3")
+        cls.corrupted_mp3 = os.path.join(cls.samples_dir, "sample_corrupted.mp3")
 
     # 1-3. Audio Loading & Validation
     def test_01_valid_audio_loading(self):
@@ -214,6 +222,79 @@ class TestMasterEmotionSystem(unittest.TestCase):
         # Sort by confidence
         sorted_conf = df.sort_values('confidence', ascending=False)
         self.assertEqual(sorted_conf.iloc[0]['confidence'], 0.92)
+
+    # 33-37. MP3 Audio Format Integration Tests
+    def test_19_mp3_audio_loading_and_validation(self):
+        self.assertTrue(os.path.exists(self.neutral_mp3), "MP3 fixture missing")
+        y, sr = load_audio_raw(self.neutral_mp3, sr=config.SR)
+        self.assertEqual(sr, config.SR)
+        self.assertGreater(len(y), 0)
+        self.assertFalse(np.isnan(y).any())
+
+        is_valid, msg, dur, file_sr = validate_audio_file(self.neutral_mp3)
+        self.assertTrue(is_valid, f"MP3 validation failed: {msg}")
+        self.assertGreater(dur, 2.0)
+
+    def test_20_mp3_mel_and_mfcc_extraction(self):
+        y, sr = load_audio(self.happy_mp3, sr=config.SR, duration=config.DURATION)
+        S_dB = extract_mel_spectrogram(y, sr=sr, n_mels=128, target_frames=130)
+        self.assertEqual(S_dB.shape, (128, 130))
+        self.assertFalse(np.isnan(S_dB).any())
+
+        mfcc = extract_mfcc(y, sr=sr, n_mfcc=40)
+        self.assertEqual(mfcc.shape[0], 40)
+
+        feats = extract_audio_features(y, sr)
+        self.assertIn('rms_mean', feats)
+        self.assertIn('zcr_mean', feats)
+
+    def test_21_mp3_prediction_cnn_lstm(self):
+        lstm_model, encoder = load_model_and_encoder('cnn_lstm')
+        res = predict_emotion(self.happy_mp3, lstm_model, encoder, sr=config.SR)
+        self.assertIn('emotion', res)
+        self.assertIn(res['emotion'], config.EMOTIONS)
+        self.assertGreaterEqual(res['confidence'], 0.0)
+        self.assertLessEqual(res['confidence'], 1.0)
+        self.assertEqual(len(res['top_3']), 3)
+
+    def test_22_mp3_timeline_segmentation(self):
+        lstm_model, encoder = load_model_and_encoder('cnn_lstm')
+        timeline = predict_segments(self.long_mp3, lstm_model, encoder, sr=config.SR, min_duration_for_timeline=4.0)
+        self.assertIsNotNone(timeline)
+        self.assertGreaterEqual(len(timeline), 2)
+        for seg in timeline:
+            self.assertIn('emotion', seg)
+            self.assertIn('confidence', seg)
+
+    def test_23_mp3_corrupted_and_short_rejection(self):
+        is_short_valid, short_msg, _, _ = validate_audio_file(self.short_mp3)
+        self.assertFalse(is_short_valid)
+        self.assertIn("too short", short_msg.lower())
+
+        is_corr_valid, corr_msg, _, _ = validate_audio_file(self.corrupted_mp3)
+        self.assertFalse(is_corr_valid)
+
+    # 38-39. Microphone & In-Memory Audio Stream Processing
+    def test_24_mic_bytes_decoding_and_conversion(self):
+        with open(self.happy_wav, 'rb') as f:
+            raw_bytes = f.read()
+        
+        y_dec, sr_dec = decode_audio_bytes(raw_bytes, target_sr=config.SR)
+        self.assertEqual(sr_dec, config.SR)
+        self.assertGreater(len(y_dec), 0)
+        self.assertFalse(np.isnan(y_dec).any())
+
+        clean_wav_bytes = audio_to_wav_bytes(y_dec, sr_dec)
+        self.assertGreater(len(clean_wav_bytes), 44)
+        self.assertTrue(clean_wav_bytes.startswith(b'RIFF'))
+
+    def test_25_universal_byte_stream_handling(self):
+        with open(self.neutral_mp3, 'rb') as f:
+            mp3_bytes = f.read()
+        
+        y_mp3, sr_mp3 = decode_audio_bytes(mp3_bytes, target_sr=config.SR)
+        self.assertEqual(sr_mp3, config.SR)
+        self.assertGreater(len(y_mp3), 0)
 
 
 if __name__ == '__main__':

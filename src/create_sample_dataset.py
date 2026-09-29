@@ -124,30 +124,40 @@ def generate_all_demo_voices(output_dir: str = None):
 
     for code, emo_name in config.EMOTION_LABELS.items():
         signal_out = synthesize_emotion_speech(code, actor_id=1, rep=1, duration=3.2, sr=sr)
-        filename = f"demo_{emo_name}.wav"
-        filepath = os.path.join(output_dir, filename)
-        sf.write(filepath, signal_out, sr)
-        print(f"  [OK] {emo_name.capitalize():<10} -> {filename}")
+        
+        # WAV
+        filename_wav = f"demo_{emo_name}.wav"
+        sf.write(os.path.join(output_dir, filename_wav), signal_out, sr)
+        
+        # MP3
+        filename_mp3 = f"demo_{emo_name}.mp3"
+        sf.write(os.path.join(output_dir, filename_mp3), signal_out, sr, format='MP3')
+        
+        print(f"  [OK] {emo_name.capitalize():<10} -> {filename_wav} & {filename_mp3}")
 
-        # Maintain legacy aliases (sample_neutral.wav, sample_happy.wav, sample_angry.wav)
+        # Maintain legacy aliases (sample_neutral.wav/.mp3, sample_happy.wav/.mp3, sample_angry.wav/.mp3)
         if emo_name in ['neutral', 'happy', 'angry']:
-            legacy_name = f"sample_{emo_name}.wav"
-            sf.write(os.path.join(output_dir, legacy_name), signal_out, sr)
+            sf.write(os.path.join(output_dir, f"sample_{emo_name}.wav"), signal_out, sr)
+            sf.write(os.path.join(output_dir, f"sample_{emo_name}.mp3"), signal_out, sr, format='MP3')
 
     # Generate multi-emotion long sample (6.5s) for timeline: calm (3.2s) + happy (3.3s)
     s_calm = synthesize_emotion_speech(2, actor_id=1, rep=1, duration=3.2, sr=sr)
     s_happy = synthesize_emotion_speech(3, actor_id=1, rep=1, duration=3.3, sr=sr)
     s_long = np.concatenate([s_calm, s_happy])
     sf.write(os.path.join(output_dir, "sample_long_speech.wav"), s_long, sr)
-    print("  [OK] Long Speech (6.5s) -> sample_long_speech.wav")
+    sf.write(os.path.join(output_dir, "sample_long_speech.mp3"), s_long, sr, format='MP3')
+    print("  [OK] Long Speech (6.5s) -> sample_long_speech.wav & sample_long_speech.mp3")
 
     # Short audio (< 1s) for boundary tests
     s_short = synthesize_emotion_speech(1, actor_id=1, rep=1, duration=0.3, sr=sr)
     sf.write(os.path.join(output_dir, "sample_too_short.wav"), s_short, sr)
+    sf.write(os.path.join(output_dir, "sample_too_short.mp3"), s_short, sr, format='MP3')
 
     # Corrupted audio for invalid header tests
     with open(os.path.join(output_dir, "sample_corrupted.wav"), "wb") as f:
         f.write(b"RIFF\x00\x00\x00\x00WAVEcorrupted_garbage_bytes")
+    with open(os.path.join(output_dir, "sample_corrupted.mp3"), "wb") as f:
+        f.write(b"ID3\x03\x00\x00\x00\x00\x00\x00corrupted_mp3_garbage_data")
 
 
 def generate_full_ravdess_corpus(base_dir: str = None, num_actors: int = 8, reps_per_emotion: int = 4):

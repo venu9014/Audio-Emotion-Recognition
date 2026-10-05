@@ -138,13 +138,24 @@ def generate_html_report(
     <meta charset="UTF-8">
     <title>EMOTIVA Analysis Report — {audio_name}</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Forum&display=swap');
+        @font-face {{
+            font-family: 'BD Supper';
+            src: local('BD Supper'), local('BDSupper'), local('bd-supper'), local('BD-Supper');
+            font-weight: normal;
+            font-style: normal;
+            font-display: swap;
+        }}
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+            font-family: 'Forum', serif;
             background: #080c14;
             color: #e2e8f0;
             padding: 30px 20px;
             line-height: 1.5;
+        }}
+        h1, h2, h3, h4, .brand, .emotion-title, .section-title, .badge {{
+            font-family: 'BD Supper', 'Forum', cursive, sans-serif !important;
         }}
         .report-card {{
             max-width: 860px;

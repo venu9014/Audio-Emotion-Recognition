@@ -21,7 +21,7 @@ _LAYOUT = dict(
     plot_bgcolor='rgba(0,0,0,0)',
     paper_bgcolor='rgba(0,0,0,0)',
     margin=dict(l=40, r=20, t=50, b=40),
-    font=dict(family="Inter, sans-serif", size=12, color="#e2e8f0"),
+    font=dict(family="Forum, serif", size=12, color="#e2e8f0"),
 )
 
 

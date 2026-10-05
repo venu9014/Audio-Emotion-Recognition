@@ -33,3 +33,5 @@ scratch/
 temp_*.wav
 reports/*.html
 reports/*.csv
+*.db
+*.sqlite*

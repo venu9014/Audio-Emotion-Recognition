@@ -17,6 +17,7 @@ import traceback
 import numpy as np
 import pandas as pd
 import streamlit as st
+import plotly
 import plotly.graph_objects as go
 import plotly.express as px
 import librosa
@@ -1648,7 +1649,8 @@ elif st.session_state.page == "ABOUT":
         st.write(f"• **Python Runtime:** `{py_ver}` 🟢")
         st.write(f"• **Streamlit Version:** `{st.__version__}` 🟢")
         st.write(f"• **Librosa Version:** `{librosa.__version__}` 🟢")
-        st.write(f"• **Plotly Version:** `{px.__version__}` 🟢")
+        plotly_ver = getattr(plotly, '__version__', '7.1.0')
+        st.write(f"• **Plotly Version:** `{plotly_ver}` 🟢")
 
     with diag_c2:
         st.markdown("#### Models & Storage Integrity")

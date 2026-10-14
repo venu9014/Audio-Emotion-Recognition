@@ -1,0 +1,124 @@
+{
+  "timestamp": "2026-10-14 21:31:15",
+  "python_version": "3.11.9",
+  "benchmarks": {
+    "cnn_lstm": {
+      "runs": 30,
+      "mean_ms": 68.51,
+      "median_ms": 65.74,
+      "p95_ms": 80.34,
+      "std_ms": 10.74
+    },
+    "cnn": {
+      "runs": 30,
+      "mean_ms": 70.27,
+      "median_ms": 64.57,
+      "p95_ms": 91.67,
+      "std_ms": 16.74
+    }
+  },
+  "edge_cases": {
+    "pure_silence": {
+      "status": "PASS",
+      "predicted_emotion": "surprised",
+      "prob_sum": 1.0,
+      "has_nan": false
+    },
+    "maximum_loudness_clipping": {
+      "status": "PASS",
+      "confidence": 71.9
+    },
+    "gaussian_white_noise": {
+      "status": "PASS",
+      "confidence": 79.8,
+      "emotion": "angry"
+    },
+    "too_short_rejection": {
+      "status": "PASS",
+      "error_message": "Audio is too short (0.30s). Minimum required duration is 0.5s."
+    },
+    "corrupted_audio_rejection": {
+      "status": "PASS",
+      "error_message": "Audio file is empty or contains no audio data (0 or invalid byte length)."
+    },
+    "long_audio_segmentation": {
+      "status": "PASS",
+      "segment_count": 3,
+      "first_segment_window": "0.0s - 3.0s"
+    }
+  },
+  "audio_formats": {
+    "WAV": {
+      "status": "PASS",
+      "samples": 70560,
+      "sr": 22050
+    },
+    "MP3": {
+      "status": "PASS",
+      "samples": 70560,
+      "sr": 22050
+    },
+    "BYTE_STREAM_MIC": {
+      "status": "PASS",
+      "encoded_wav_bytes": 141164
+    }
+  },
+  "database_stress": {
+    "records_inserted": 50,
+    "insert_time_ms": 241.88,
+    "insert_speed_records_per_sec": 206.7,
+    "starred_count": 10,
+    "search_match": true,
+    "update_verified": true,
+    "delete_verified": true,
+    "aggregate_stats": {
+      "total_records": 50,
+      "average_confidence": 0.915,
+      "average_confidence_pct": "91.5%",
+      "starred_records": 10,
+      "high_confidence_records": 50,
+      "top_emotion": "neutral",
+      "emotion_breakdown": {
+        "neutral": 7,
+        "calm": 7,
+        "surprised": 6,
+        "sad": 6,
+        "happy": 6,
+        "fearful": 6,
+        "disgust": 6,
+        "angry": 6
+      },
+      "model_breakdown": {
+        "CNN": 25,
+        "CNN-LSTM": 25
+      }
+    }
+  },
+  "security_privacy": {
+    "cloud_transmissions": "NONE (100% on-premise edge execution)",
+    "sqlite_local_storage": "VERIFIED (Local file emotiva_history.db)",
+    "api_credentials_leak": "NONE (No hardcoded API keys or external secrets)",
+    "input_sanitization": "VERIFIED (Filenames and queries parameterized via SQL bindings)"
+  },
+  "typography_audit": {
+    "header_display_font": "BD Supper (Fallback: Forum, Georgia, serif)",
+    "body_font": "Forum (Google Fonts CDN)",
+    "css_theme_verified": true
+  },
+  "navigation_audit": {
+    "pages_total": 7,
+    "pages_list": [
+      "HOME",
+      "ANALYZE",
+      "AUDIO LAB",
+      "INSIGHTS",
+      "MODELS",
+      "HISTORY",
+      "ABOUT"
+    ],
+    "all_configured": true,
+    "sidebar_integrated": true,
+    "query_param_sync": true,
+    "breadcrumbs_active": true
+  }
+}

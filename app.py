@@ -365,6 +365,7 @@ state_defaults = {
     'audio_name': None,
     'audio_bytes': None,
     'audio_duration': None,
+    'raw_input_bytes': None,
     'analysis_results': None,
     'dual_results': None,
     'model_type': 'cnn_lstm',
@@ -508,6 +509,7 @@ with st.sidebar:
     if st.session_state.audio_data is not None:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🔄 Reset Active Audio", use_container_width=True, key="sb_reset_btn"):
+            st.session_state.raw_input_bytes = None
             st.session_state.audio_data = None
             st.session_state.audio_sr = None
             st.session_state.audio_name = None
@@ -760,7 +762,7 @@ elif st.session_state.page == "ANALYZE":
                     input_audio_name = "sample_long_speech.wav"
 
     # Load into session state if new audio is provided
-    if input_audio_bytes is not None and (st.session_state.audio_bytes != input_audio_bytes):
+    if input_audio_bytes is not None and (st.session_state.get('raw_input_bytes') != input_audio_bytes):
         try:
             with st.spinner("Decoding and standardizing audio stream..."):
                 y_raw, sr = decode_audio_bytes(input_audio_bytes, target_sr=config.SR)
@@ -770,6 +772,7 @@ elif st.session_state.page == "ANALYZE":
                     st.error(f"❌ Audio is too short ({dur_sec:.2f}s). Minimum required duration is 0.5s.")
                 else:
                     clean_wav = audio_to_wav_bytes(y_raw, sr)
+                    st.session_state.raw_input_bytes = input_audio_bytes
                     st.session_state.audio_bytes = clean_wav
                     st.session_state.audio_name = input_audio_name
                     st.session_state.audio_data = y_raw
@@ -799,6 +802,7 @@ elif st.session_state.page == "ANALYZE":
             btn_res, btn_lab = st.columns(2)
             with btn_res:
                 if st.button("🔄 RESET", use_container_width=True):
+                    st.session_state.raw_input_bytes = None
                     st.session_state.audio_data = None
                     st.session_state.audio_sr = None
                     st.session_state.audio_name = None

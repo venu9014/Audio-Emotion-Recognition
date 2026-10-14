@@ -219,11 +219,19 @@ def load_audio(file_path: str, sr: int = 22050, duration: float = 3.0) -> Tuple[
     """
     try:
         try:
-            y, loaded_sr = librosa.load(file_path, sr=sr, mono=True)
+            y, loaded_sr = sf.read(file_path)
+            y = np.atleast_1d(y)
+            if y.ndim > 1:
+                y = np.mean(y, axis=1)
+            if loaded_sr != sr:
+                y = librosa.resample(y.astype(np.float32), orig_sr=loaded_sr, target_sr=sr)
         except Exception:
-            with open(file_path, 'rb') as f:
-                raw_bytes = f.read()
-            y, loaded_sr = decode_audio_bytes(raw_bytes, target_sr=sr)
+            try:
+                y, loaded_sr = librosa.load(file_path, sr=sr, mono=True)
+            except Exception:
+                with open(file_path, 'rb') as f:
+                    raw_bytes = f.read()
+                y, loaded_sr = decode_audio_bytes(raw_bytes, target_sr=sr)
 
         # Trim silence
         if len(y) > 0:
@@ -253,11 +261,19 @@ def load_audio_raw(file_path: str, sr: int = 22050) -> Tuple[np.ndarray, int]:
     """
     try:
         try:
-            y, loaded_sr = librosa.load(file_path, sr=sr, mono=True)
+            y, loaded_sr = sf.read(file_path)
+            y = np.atleast_1d(y)
+            if y.ndim > 1:
+                y = np.mean(y, axis=1)
+            if loaded_sr != sr:
+                y = librosa.resample(y.astype(np.float32), orig_sr=loaded_sr, target_sr=sr)
         except Exception:
-            with open(file_path, 'rb') as f:
-                raw_bytes = f.read()
-            y, loaded_sr = decode_audio_bytes(raw_bytes, target_sr=sr)
+            try:
+                y, loaded_sr = librosa.load(file_path, sr=sr, mono=True)
+            except Exception:
+                with open(file_path, 'rb') as f:
+                    raw_bytes = f.read()
+                y, loaded_sr = decode_audio_bytes(raw_bytes, target_sr=sr)
 
         if len(y) > 0 and np.max(np.abs(y)) > 0:
             y = librosa.util.normalize(y)

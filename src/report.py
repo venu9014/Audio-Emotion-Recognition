@@ -45,7 +45,7 @@ def generate_spectrogram_base64(y: np.ndarray, sr: int) -> str:
     S = librosa.feature.melspectrogram(
         y=y, sr=sr, n_mels=config.N_MELS, n_fft=config.N_FFT, hop_length=config.HOP_LENGTH
     )
-    ref_val = np.max(S) if np.max(S) > 0 else 1.0
+    ref_val = float(np.max(S)) if S.size > 0 and np.max(S) > 0 else 1.0
     S_dB = librosa.power_to_db(S, ref=ref_val)
 
     img = ax.imshow(S_dB, aspect='auto', origin='lower', cmap='viridis',

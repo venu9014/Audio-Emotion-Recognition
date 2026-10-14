@@ -1,20 +1,20 @@
 {
-  "timestamp": "2026-10-14 21:31:15",
+  "timestamp": "2026-10-14 22:01:00",
   "python_version": "3.11.9",
   "benchmarks": {
     "cnn_lstm": {
       "runs": 30,
-      "mean_ms": 68.51,
-      "median_ms": 65.74,
-      "p95_ms": 80.34,
-      "std_ms": 10.74
+      "mean_ms": 64.63,
+      "median_ms": 64.51,
+      "p95_ms": 80.71,
+      "std_ms": 15.82
     },
     "cnn": {
       "runs": 30,
-      "mean_ms": 70.27,
-      "median_ms": 64.57,
-      "p95_ms": 91.67,
-      "std_ms": 16.74
+      "mean_ms": 20.09,
+      "median_ms": 18.84,
+      "p95_ms": 28.46,
+      "std_ms": 3.68
     }
   },
   "edge_cases": {
@@ -30,7 +30,7 @@
     },
     "gaussian_white_noise": {
       "status": "PASS",
-      "confidence": 79.8,
+      "confidence": 80.2,
       "emotion": "angry"
     },
     "too_short_rejection": {
@@ -65,8 +65,8 @@
   },
   "database_stress": {
     "records_inserted": 50,
-    "insert_time_ms": 241.88,
-    "insert_speed_records_per_sec": 206.7,
+    "insert_time_ms": 297.63,
+    "insert_speed_records_per_sec": 168.0,
     "starred_count": 10,
     "search_match": true,
     "update_verified": true,

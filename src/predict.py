@@ -103,7 +103,10 @@ def predict_emotion(
     S = np.expand_dims(S, axis=0)
 
     # Predict
-    probabilities = model.predict(S, verbose=0)[0]
+    try:
+        probabilities = model(S, training=False).numpy()[0]
+    except Exception:
+        probabilities = model.predict(S, verbose=0)[0]
 
     # Get top prediction
     pred_idx = int(np.argmax(probabilities))
@@ -198,7 +201,10 @@ def predict_segments(
             S = np.pad(S, ((0, 0), (0, 130 - S.shape[1])), mode='constant')
 
         S_batch = np.expand_dims(np.expand_dims(S, axis=-1), axis=0)
-        probabilities = model.predict(S_batch, verbose=0)[0]
+        try:
+            probabilities = model(S_batch, training=False).numpy()[0]
+        except Exception:
+            probabilities = model.predict(S_batch, verbose=0)[0]
 
         pred_idx = int(np.argmax(probabilities))
         confidence = float(probabilities[pred_idx])

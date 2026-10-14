@@ -31,7 +31,7 @@ st.set_page_config(
     page_title="EMOTIVA | AI Speech Emotion Intelligence",
     page_icon="🎙️",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # ---------------------------------------------------------
@@ -99,19 +99,27 @@ CSS_THEME = """
   --border-glow: rgba(6, 182, 212, 0.35);
 }
 
-/* Hide Streamlit chrome */
-header {visibility: hidden;}
+/* Streamlit Chrome & Pointer Events Fix */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 .stDeployButton {display: none;}
+header[data-testid="stHeader"] {
+    background: transparent !important;
+    pointer-events: auto !important;
+}
+.block-container {
+    padding-top: 1.5rem !important;
+    padding-bottom: 3.5rem !important;
+    max-width: 1250px !important;
+}
 
 /* Global Body Font = Forum (Strict Requirement 10 & 11) */
 html, body, [class*="css"], .stApp, p, span, label, div, button, 
 .stButton button, input, select, textarea, .stMarkdown, .hero-subtitle, 
 .status-card-title, .pipeline-node, [data-testid="stMetricLabel"],
 .stSelectbox, .stRadio, .stSlider, .stTabs [role="tab"], .stExpander,
-.caption, small, .stAlert, .disclaimer, table, td, th {
-    font-family: 'Forum', serif !important;
+.caption, small, .stAlert, .disclaimer, table, td, th, .forum-body {
+    font-family: 'Forum', Georgia, serif !important;
 }
 
 /* Header & Display Font = BD Supper (Strict Requirement 10 & 11) */
@@ -119,8 +127,8 @@ h1, h2, h3, h4, h5, h6,
 .hero-title, .hero-tag, .status-card-value, [data-testid="stMetricValue"], 
 .prediction-box, .emotion-title, .section-header, .display-header, 
 [data-testid="stHeader"], .stAppHeader, .navbar-brand, .brand-title, 
-.metric-value, [data-testid="stMetricValue"] div {
-    font-family: 'BD Supper', 'Forum', cursive, sans-serif !important;
+.metric-value, [data-testid="stMetricValue"] div, .bd-supper {
+    font-family: 'BD Supper', 'Forum', Georgia, serif !important;
     letter-spacing: -0.01em;
 }
 
@@ -387,20 +395,154 @@ def get_model_and_encoder(model_name: str):
         return None, None, f"Error loading {model_name}: {str(ex)}"
 
 # ---------------------------------------------------------
-# 6. NAVIGATION BAR
+# 6. NAVIGATION & ROUTING ENGINE (BIDIRECTIONAL QUERY PARAMS)
 # ---------------------------------------------------------
 PAGES = ["HOME", "ANALYZE", "AUDIO LAB", "INSIGHTS", "MODELS", "HISTORY", "ABOUT"]
-nav_cols = st.columns(len(PAGES))
+PAGE_CONFIG = {
+    "HOME": {"icon": "🏠", "title": "Affective Intelligence Workstation", "desc": "Pipeline & Architecture"},
+    "ANALYZE": {"icon": "🔬", "title": "Audio Analysis & Emotion Recognition", "desc": "Neural Voice Affect Inference"},
+    "AUDIO LAB": {"icon": "🎛️", "title": "Audio Signal Processing Workstation", "desc": "Interactive DSP & Filterbanks"},
+    "INSIGHTS": {"icon": "📊", "title": "RAVDESS Dataset Insights & Statistics", "desc": "Corpus Composition & Distributions"},
+    "MODELS": {"icon": "🧪", "title": "Deep Learning Models & Benchmark Evaluations", "desc": "Dual Architecture Comparison"},
+    "HISTORY": {"icon": "📜", "title": "Persistent Inference History & Audit Log", "desc": "SQLite Persistence & Analytics"},
+    "ABOUT": {"icon": "ℹ️", "title": "System Architecture & Diagnostic Check", "desc": "Specifications & Health Check"}
+}
 
-for i, p_name in enumerate(PAGES):
-    with nav_cols[i]:
-        is_active = (st.session_state.page == p_name)
-        btn_type = "primary" if is_active else "secondary"
-        if st.button(p_name, key=f"nav_btn_{p_name}", type=btn_type, use_container_width=True):
-            st.session_state.page = p_name
+# Bidirectional URL Query Parameter Sync (Preserves Route on Refresh & Back/Forward)
+query_page = st.query_params.get("page", None)
+if query_page:
+    cleaned_qp = query_page.upper().strip()
+    if cleaned_qp in PAGES and cleaned_qp != st.session_state.page:
+        st.session_state.page = cleaned_qp
+
+def navigate_to(target_page: str):
+    """Centralized navigation dispatcher updating state, query parameters, and rerunning cleanly."""
+    if target_page in PAGES:
+        st.session_state.page = target_page
+        st.query_params["page"] = target_page
+        st.rerun()
+
+# Ensure URL always reflects active page
+st.query_params["page"] = st.session_state.page
+
+# ---------------------------------------------------------
+# SIDEBAR NAVIGATION & QUICK UTILITIES
+# ---------------------------------------------------------
+with st.sidebar:
+    st.markdown("""
+    <div style='padding: 0.25rem 0 1rem 0;'>
+        <div style='font-family: "BD Supper", "Forum", serif; font-size: 1.55rem; font-weight: 800; color: var(--accent-cyan); letter-spacing: -0.02em;'>
+            🎙️ EMOTIVA 2.0
+        </div>
+        <div style='font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 1px;'>
+            Speech Affect Intelligence • Active
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<p style='font-size:0.75rem; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.08em; font-weight:700; margin-bottom:0.35rem;'>NAVIGATION MODULES</p>", unsafe_allow_html=True)
+    
+    for p_name in PAGES:
+        p_cfg = PAGE_CONFIG[p_name]
+        is_p_active = (st.session_state.page == p_name)
+        s_btn_type = "primary" if is_p_active else "secondary"
+        s_label = f"{p_cfg['icon']}  {p_name}"
+        if st.button(s_label, key=f"sb_nav_{p_name}", type=s_btn_type, use_container_width=True):
+            navigate_to(p_name)
+
+    st.markdown("<hr style='border: 1px solid var(--border-subtle); margin: 1rem 0;'>", unsafe_allow_html=True)
+
+    # Active Architecture Selector
+    st.markdown("<p style='font-size:0.75rem; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.08em; font-weight:700; margin-bottom:0.35rem;'>ACTIVE MODEL</p>", unsafe_allow_html=True)
+    sb_model = st.radio(
+        "Active Model Architecture:",
+        options=["cnn_lstm", "cnn"],
+        format_func=lambda x: "CNN-LSTM Spatiotemporal" if x == "cnn_lstm" else "CNN Spatial Baseline",
+        index=0 if st.session_state.model_type == "cnn_lstm" else 1,
+        key="sb_model_radio",
+        label_visibility="collapsed"
+    )
+    if sb_model != st.session_state.model_type:
+        st.session_state.model_type = sb_model
+        st.rerun()
+
+    st.markdown("<hr style='border: 1px solid var(--border-subtle); margin: 1rem 0;'>", unsafe_allow_html=True)
+
+    # Database Live Counter
+    sb_stats = get_history_stats()
+    st.markdown("<p style='font-size:0.75rem; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.08em; font-weight:700; margin-bottom:0.35rem;'>DATABASE PERSISTENCE</p>", unsafe_allow_html=True)
+    sb_c1, sb_c2 = st.columns(2)
+    sb_c1.metric("Audits Saved", sb_stats['total_records'])
+    sb_c2.metric("Starred", sb_stats['starred_records'])
+
+    st.markdown("<hr style='border: 1px solid var(--border-subtle); margin: 1rem 0;'>", unsafe_allow_html=True)
+
+    # Quick Demo Audio Ingestion
+    st.markdown("<p style='font-size:0.75rem; text-transform:uppercase; color:var(--text-muted); letter-spacing:0.08em; font-weight:700; margin-bottom:0.35rem;'>QUICK DEMO AUDIO</p>", unsafe_allow_html=True)
+    sb_pick = st.selectbox(
+        "Select synthetic demo voice:",
+        options=["Select Demo Audio..."] + [f"{config.EMOTION_EMOJIS.get(e, '🎭')} {e.capitalize()}" for e in config.EMOTIONS],
+        key="sb_quick_demo"
+    )
+    if sb_pick != "Select Demo Audio...":
+        chosen_emo = sb_pick.split()[-1].lower()
+        samples_dir = os.path.join(config.PROJECT_ROOT, "samples")
+        demo_f = f"demo_{chosen_emo}.wav"
+        demo_p = os.path.join(samples_dir, demo_f)
+        if not os.path.exists(demo_p):
+            demo_p = os.path.join(samples_dir, f"sample_{chosen_emo}.wav")
+        if os.path.exists(demo_p):
+            y_load, sr_load = load_audio_raw(demo_p, sr=config.SR)
+            with open(demo_p, 'rb') as f_b:
+                st.session_state.audio_bytes = f_b.read()
+            st.session_state.audio_data = y_load
+            st.session_state.audio_sr = sr_load
+            st.session_state.audio_name = demo_f
+            st.session_state.audio_duration = len(y_load) / sr_load
+            st.session_state.analysis_results = None
+            st.session_state.dual_results = None
+            st.session_state.timeline_results = None
+            st.session_state.audio_features = None
+            navigate_to("ANALYZE")
+
+    if st.session_state.audio_data is not None:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🔄 Reset Active Audio", use_container_width=True, key="sb_reset_btn"):
+            st.session_state.audio_data = None
+            st.session_state.audio_sr = None
+            st.session_state.audio_name = None
+            st.session_state.audio_bytes = None
+            st.session_state.audio_duration = None
+            st.session_state.analysis_results = None
+            st.session_state.dual_results = None
+            st.session_state.timeline_results = None
+            st.session_state.audio_features = None
             st.rerun()
 
-st.markdown("<hr style='border: 1px solid var(--border-subtle); margin-top: 0.4rem; margin-bottom: 1.2rem;'>", unsafe_allow_html=True)
+# ---------------------------------------------------------
+# TOP NAVIGATION BAR & BREADCRUMBS
+# ---------------------------------------------------------
+nav_cols = st.columns(len(PAGES))
+for i, p_name in enumerate(PAGES):
+    with nav_cols[i]:
+        p_cfg = PAGE_CONFIG[p_name]
+        is_active = (st.session_state.page == p_name)
+        btn_type = "primary" if is_active else "secondary"
+        btn_label = f"{p_cfg['icon']} {p_name}"
+        if st.button(btn_label, key=f"topnav_btn_{p_name}", type=btn_type, use_container_width=True):
+            navigate_to(p_name)
+
+# Breadcrumbs bar
+curr_cfg = PAGE_CONFIG.get(st.session_state.page, PAGE_CONFIG["HOME"])
+st.markdown(f"""
+<div style='display:flex; align-items:center; gap:8px; font-size:0.85rem; color:var(--text-muted); margin-top: 0.35rem; margin-bottom: 1.25rem; padding: 6px 14px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); border-radius: 8px;'>
+    <span>🏠 <a href='?page=HOME' target='_self' style='color:var(--text-secondary); text-decoration:none;'>EMOTIVA</a></span>
+    <span>/</span>
+    <span style='color:var(--accent-cyan); font-weight:700;'>{curr_cfg['icon']} {st.session_state.page}</span>
+    <span>/</span>
+    <span style='color:var(--text-muted);'>{curr_cfg['title']}</span>
+</div>
+""", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # 7. ROUTING TO INDIVIDUAL PAGES
@@ -426,12 +568,10 @@ if st.session_state.page == "HOME":
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
             if st.button("🚀 ANALYZE VOICE", type="primary", use_container_width=True):
-                st.session_state.page = "ANALYZE"
-                st.rerun()
+                navigate_to("ANALYZE")
         with col_btn2:
             if st.button("🎛️ OPEN AUDIO LAB", use_container_width=True):
-                st.session_state.page = "AUDIO LAB"
-                st.rerun()
+                navigate_to("AUDIO LAB")
 
     # System Status Cards
     st.markdown("""
@@ -496,20 +636,16 @@ if st.session_state.page == "HOME":
     f1, f2, f3, f4 = st.columns(4)
     with f1:
         if st.button("📊 Dataset Insights", use_container_width=True):
-            st.session_state.page = "INSIGHTS"
-            st.rerun()
+            navigate_to("INSIGHTS")
     with f2:
         if st.button("🧪 Model Benchmarks", use_container_width=True):
-            st.session_state.page = "MODELS"
-            st.rerun()
+            navigate_to("MODELS")
     with f3:
         if st.button("📜 Audit History", use_container_width=True):
-            st.session_state.page = "HISTORY"
-            st.rerun()
+            navigate_to("HISTORY")
     with f4:
         if st.button("ℹ️ System Architecture", use_container_width=True):
-            st.session_state.page = "ABOUT"
-            st.rerun()
+            navigate_to("ABOUT")
 
 
 # =========================================================
@@ -676,8 +812,7 @@ elif st.session_state.page == "ANALYZE":
 
             with btn_lab:
                 if st.button("🎛️ Audio Lab →", use_container_width=True):
-                    st.session_state.page = "AUDIO LAB"
-                    st.rerun()
+                    navigate_to("AUDIO LAB")
 
         with p_col2:
             st.plotly_chart(
@@ -1067,8 +1202,7 @@ elif st.session_state.page == "AUDIO LAB":
         with c_sel2:
             st.markdown("Or navigate back to analyze voice:")
             if st.button("← Go to Analyze Page", use_container_width=True):
-                st.session_state.page = "ANALYZE"
-                st.rerun()
+                navigate_to("ANALYZE")
 
     else:
         y = st.session_state.audio_data
@@ -1085,8 +1219,7 @@ elif st.session_state.page == "AUDIO LAB":
         with top_col3:
             st.metric("Sample Rate", f"{sr} Hz")
             if st.button("← Back to Analyze", use_container_width=True):
-                st.session_state.page = "ANALYZE"
-                st.rerun()
+                navigate_to("ANALYZE")
 
         st.markdown("---")
 
@@ -1315,8 +1448,7 @@ elif st.session_state.page == "INSIGHTS":
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("Explore Model Benchmarks & Architecture (MODELS) →", type="primary"):
-        st.session_state.page = "MODELS"
-        st.rerun()
+        navigate_to("MODELS")
 
 
 # =========================================================
@@ -1440,13 +1572,28 @@ elif st.session_state.page == "MODELS":
         ```
         """)
 
+    st.markdown("<br>", unsafe_allow_html=True)
+    m_nav1, m_nav2 = st.columns(2)
+    with m_nav1:
+        if st.button("🔬 Test Models on Live Voice (ANALYZE)", type="primary", use_container_width=True):
+            navigate_to("ANALYZE")
+    with m_nav2:
+        if st.button("📜 View Audit Log & Saved Inferences (HISTORY)", use_container_width=True):
+            navigate_to("HISTORY")
+
 
 # =========================================================
 # PAGE 6: HISTORY (SQLite CRUD & Audit Log)
 # =========================================================
 elif st.session_state.page == "HISTORY":
-    st.markdown("<h2>📜 Persistent Inference History & Audit Log (SQLite)</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='color: var(--text-secondary); font-size:1.1rem;'>Audit trail of all audio predictions with database persistence, notes, tags, filtering, and export.</p>", unsafe_allow_html=True)
+    h_title_c1, h_title_c2 = st.columns([3, 1.2])
+    with h_title_c1:
+        st.markdown("<h2>📜 Persistent Inference History & Audit Log (SQLite)</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='color: var(--text-secondary); font-size:1.1rem;'>Audit trail of all audio predictions with database persistence, notes, tags, filtering, and export.</p>", unsafe_allow_html=True)
+    with h_title_c2:
+        st.markdown("<div style='margin-top:0.8rem;'></div>", unsafe_allow_html=True)
+        if st.button("🔬 New Analysis (ANALYZE)", type="primary", use_container_width=True):
+            navigate_to("ANALYZE")
 
     # 1. Summary Statistics Cards (CRUD - Aggregation)
     stats = get_history_stats()
@@ -1490,8 +1637,7 @@ elif st.session_state.page == "HISTORY":
     if not records:
         st.info("No matching inference records found in database. Go to ANALYZE page to run predictions.")
         if st.button("← Go to Analyze"):
-            st.session_state.page = "ANALYZE"
-            st.rerun()
+            navigate_to("ANALYZE")
     else:
         # Action Bar: Export & Clear
         act_c1, act_c2, act_c3 = st.columns([1.5, 1.5, 2])
@@ -1691,5 +1837,44 @@ elif st.session_state.page == "ABOUT":
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("🚀 Return to Analyze Voice (ANALYZE)", type="primary"):
-        st.session_state.page = "ANALYZE"
-        st.rerun()
+        navigate_to("ANALYZE")
+
+
+# ---------------------------------------------------------
+# 8. GLOBAL FOOTER & SYSTEM PERSISTENCE BADGES
+# ---------------------------------------------------------
+st.markdown("<br><hr style='border: 1px solid var(--border-subtle); margin: 3rem 0 1.5rem;'>", unsafe_allow_html=True)
+foot_col1, foot_col2, foot_col3 = st.columns([1.5, 2, 1.5])
+with foot_col1:
+    st.markdown("""
+    <div style='font-family: "BD Supper", "Forum", serif; font-size: 1.25rem; font-weight:800; color:var(--text-primary);'>
+        🎙️ SONORA / EMOTIVA
+    </div>
+    <div style='font-size: 0.85rem; color:var(--text-muted); margin-top: 3px;'>
+        Speech Emotion Recognition & Acoustic Intelligence
+    </div>
+    """, unsafe_allow_html=True)
+
+with foot_col2:
+    st.markdown("""
+    <div style='text-align:center; font-size:0.88rem; color:var(--text-secondary);'>
+        <a href='?page=HOME' target='_self' style='color:var(--text-secondary); text-decoration:none; margin: 0 7px;'>🏠 Home</a> •
+        <a href='?page=ANALYZE' target='_self' style='color:var(--text-secondary); text-decoration:none; margin: 0 7px;'>🔬 Analyze</a> •
+        <a href='?page=AUDIO%20LAB' target='_self' style='color:var(--text-secondary); text-decoration:none; margin: 0 7px;'>🎛️ Audio Lab</a> •
+        <a href='?page=INSIGHTS' target='_self' style='color:var(--text-secondary); text-decoration:none; margin: 0 7px;'>📊 Insights</a> •
+        <a href='?page=MODELS' target='_self' style='color:var(--text-secondary); text-decoration:none; margin: 0 7px;'>🧪 Models</a> •
+        <a href='?page=HISTORY' target='_self' style='color:var(--text-secondary); text-decoration:none; margin: 0 7px;'>📜 History</a> •
+        <a href='?page=ABOUT' target='_self' style='color:var(--text-secondary); text-decoration:none; margin: 0 7px;'>ℹ️ About</a>
+    </div>
+    <div style='text-align:center; font-size:0.75rem; color:var(--text-muted); margin-top: 6px;'>
+        Local Edge Execution • SQLite Persistence • Zero Cloud Ingestion
+    </div>
+    """, unsafe_allow_html=True)
+
+with foot_col3:
+    st.markdown("""
+    <div style='text-align:right; font-size:0.8rem; color:var(--text-muted);'>
+        Typography: <strong style='color:var(--text-primary);'>BD Supper</strong> &amp; <strong style='color:var(--text-primary);'>Forum</strong><br>
+        Models: <span style='color:var(--accent-emerald);'>CNN-LSTM &amp; CNN Active</span>
+    </div>
+    """, unsafe_allow_html=True)

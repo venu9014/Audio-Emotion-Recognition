@@ -22,6 +22,7 @@ _LAYOUT = dict(
     paper_bgcolor='rgba(0,0,0,0)',
     margin=dict(l=40, r=20, t=50, b=40),
     font=dict(family="Forum, serif", size=12, color="#e2e8f0"),
+    title_font=dict(family="BD Supper, Forum, serif", size=15, color="#f8fafc"),
 )
 
 

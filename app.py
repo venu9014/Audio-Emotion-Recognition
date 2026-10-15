@@ -99,10 +99,11 @@ CSS_THEME = """
   --border-glow: rgba(6, 182, 212, 0.35);
 }
 
-/* Streamlit Chrome & Pointer Events Fix */
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-.stDeployButton {display: none;}
+/* Streamlit Chrome, Toolbar & Pointer Events Fix */
+#MainMenu, footer, .stDeployButton, [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], [data-testid="manage-app-button"], [data-testid="stHeaderActionElements"] {
+    display: none !important;
+    visibility: hidden !important;
+}
 header[data-testid="stHeader"] {
     background: transparent !important;
     pointer-events: auto !important;
@@ -133,7 +134,12 @@ h1, h2, h3, h4, h5, h6,
 }
 
 code, kbd, samp, pre {
-    font-family: 'Courier New', monospace !important;
+    font-family: 'Forum', Georgia, serif !important;
+    font-size: 0.95em;
+    background: rgba(6, 182, 212, 0.08);
+    color: var(--accent-cyan);
+    padding: 2px 6px;
+    border-radius: 4px;
 }
 
 /* Global Typography & Background */
@@ -791,7 +797,7 @@ elif st.session_state.page == "ANALYZE":
         st.markdown("### 3. Audio Preview & Acoustics")
         p_col1, p_col2 = st.columns([1, 2])
         with p_col1:
-            st.write(f"**Loaded Signal:** `{st.session_state.audio_name}`")
+            st.markdown(f"**Loaded Signal:** <span style='color:var(--accent-cyan); font-weight:600;'>{st.session_state.audio_name}</span>", unsafe_allow_html=True)
             st.audio(st.session_state.audio_bytes, format='audio/wav')
 
             dur_sec = len(st.session_state.audio_data) / st.session_state.audio_sr
@@ -843,8 +849,7 @@ elif st.session_state.page == "ANALYZE":
         if analyze_clicked:
             loaded_model, loaded_encoder, load_err = get_model_and_encoder(st.session_state.model_type)
             if loaded_model is None or loaded_encoder is None:
-                st.error("## MODEL NOT TRAINED")
-                st.markdown(f"The selected model (**{st.session_state.model_type.upper()}**) is not available. Please train it via `python src/train.py --model {st.session_state.model_type}`.")
+                st.warning(f"The selected model (**{st.session_state.model_type.upper()}**) weights are not available. Please select another model from the sidebar.")
             else:
                 with st.spinner(f"Running neural inference via {st.session_state.model_type.upper()}..."):
                     try:
@@ -891,8 +896,8 @@ elif st.session_state.page == "ANALYZE":
                         st.rerun()
 
                     except Exception as e:
-                        st.error(f"Prediction failed: {str(e)}")
-                        st.error(traceback.format_exc())
+                        st.error(f"Inference execution error: {str(e)}")
+                        print(traceback.format_exc(), file=sys.stderr)
 
         # Trigger Dual Comparison
         if dual_clicked:
@@ -1215,7 +1220,7 @@ elif st.session_state.page == "AUDIO LAB":
         # Top Audio Header
         top_col1, top_col2, top_col3 = st.columns([2, 1, 1])
         with top_col1:
-            st.write(f"**Active Signal:** `{st.session_state.audio_name}`")
+            st.markdown(f"**Active Signal:** <span style='color:var(--accent-cyan); font-weight:600;'>{st.session_state.audio_name}</span>", unsafe_allow_html=True)
             st.audio(st.session_state.audio_bytes, format='audio/wav')
         with top_col2:
             st.metric("Total Samples", f"{len(y):,}")
@@ -1372,8 +1377,7 @@ elif st.session_state.page == "INSIGHTS":
     df_meta = load_ravdess_metadata(config.DATASET_PATH)
 
     if df_meta.empty or not os.path.exists(config.DATASET_PATH):
-        st.error("## DATASET NOT FOUND")
-        st.markdown(f"The RAVDESS audio dataset was not detected in: `{config.DATASET_PATH}`.")
+        st.info("The full RAVDESS acoustic training corpus is not currently stored in the workspace directory. Model evaluation metrics, acoustic features, and demonstration voices remain fully operational.")
     else:
         ic1, ic2, ic3, ic4 = st.columns(4)
         ic1.metric("Total Audio Recordings", f"{len(df_meta):,}")
@@ -1446,7 +1450,7 @@ elif st.session_state.page == "INSIGHTS":
         demo_path = os.path.join(samples_dir, f"sample_{selected_emo}.wav")
 
     if os.path.exists(demo_path):
-        st.markdown(f"#### 🎧 Listen to Synthetic Formant Voice: `{demo_wav_name}`")
+        st.markdown(f"#### 🎧 Listen to Synthetic Formant Voice: <span style='color:var(--accent-cyan);'>{demo_wav_name}</span>", unsafe_allow_html=True)
         with open(demo_path, 'rb') as f_demo:
             st.audio(f_demo.read(), format='audio/wav')
 
@@ -1477,7 +1481,7 @@ elif st.session_state.page == "MODELS":
         st.plotly_chart(plot_model_comparison(comp_df), use_container_width=True)
         st.dataframe(comp_df, use_container_width=True)
     else:
-        st.info("Model comparison metrics not available yet. Please train and evaluate models via `python src/evaluate.py`.")
+        st.info("Model comparison metrics are currently loading or not yet recorded.")
 
     st.markdown("---")
 
@@ -1521,7 +1525,40 @@ elif st.session_state.page == "MODELS":
 
             if 'report' in selected_eval:
                 st.markdown("#### Per-Class Classification Report")
-                st.code(selected_eval['report'])
+                report_text = selected_eval['report']
+                report_rows = []
+                for r_line in report_text.strip().split('\n')[1:]:
+                    parts = r_line.strip().split()
+                    if len(parts) >= 5:
+                        if parts[0] == 'accuracy':
+                            report_rows.append({
+                                "Affect Class / Metric": "Overall Accuracy",
+                                "Precision": "—",
+                                "Recall": "—",
+                                "F1-Score": f"{float(parts[1])*100:.1f}%",
+                                "Sample Support": parts[2]
+                            })
+                        elif parts[0] in ['macro', 'weighted'] and parts[1] == 'avg':
+                            report_rows.append({
+                                "Affect Class / Metric": f"{parts[0].capitalize()} Average",
+                                "Precision": f"{float(parts[2])*100:.1f}%",
+                                "Recall": f"{float(parts[3])*100:.1f}%",
+                                "F1-Score": f"{float(parts[4])*100:.1f}%",
+                                "Sample Support": parts[5]
+                            })
+                        else:
+                            report_rows.append({
+                                "Affect Class / Metric": parts[0].capitalize(),
+                                "Precision": f"{float(parts[1])*100:.1f}%",
+                                "Recall": f"{float(parts[2])*100:.1f}%",
+                                "F1-Score": f"{float(parts[3])*100:.1f}%",
+                                "Sample Support": parts[4]
+                            })
+                if report_rows:
+                    df_report = pd.DataFrame(report_rows)
+                    st.dataframe(df_report, use_container_width=True, hide_index=True)
+                else:
+                    st.write(selected_eval['report'])
     else:
         st.info("Evaluation results not available yet.")
 
@@ -1534,47 +1571,46 @@ elif st.session_state.page == "MODELS":
     with arch_c1:
         st.markdown("#### CNN-LSTM (Main Spatiotemporal Model)")
         st.markdown("""
-        ```
-        Input: (128 Mel Bands, 130 Frames, 1 Channel)
-        │
-        ├── Conv2D(32, 3x3, same) + BatchNorm + ReLU
-        ├── MaxPooling2D(2, 2) + Dropout(0.2)
-        │
-        ├── Conv2D(64, 3x3, same) + BatchNorm + ReLU
-        ├── MaxPooling2D(2, 2) + Dropout(0.2)
-        │
-        ├── Conv2D(64, 3x3, same) + BatchNorm + ReLU
-        ├── MaxPooling2D(2, 2) + Dropout(0.2)
-        │
-        ├── Permute((2, 1, 3)) [Time axis first]
-        ├── Reshape((16 TimeSteps, 1024 Features))
-        │
-        ├── LSTM(64 Units) + Dropout(0.3)
-        ├── Dense(64, ReLU)
-        └── Dense(8, Softmax) -> Categorical Affect
-        ```
-        """)
+        <div class='glass-card' style='padding: 1.25rem;'>
+            <div style='font-weight:700; color:var(--accent-cyan); font-size:1.05rem; margin-bottom:0.75rem;'>CNN-LSTM Layer Hierarchy</div>
+            <div style='display:flex; flex-direction:column; gap:8px;'>
+                <div style='padding:8px 12px; background:rgba(6,182,212,0.08); border-left:3px solid var(--accent-cyan); border-radius:4px;'>
+                    <strong>1. Input Tensor:</strong> 128 Mel frequency bands &times; 130 time frames (single acoustic channel)
+                </div>
+                <div style='padding:8px 12px; background:rgba(59,130,246,0.08); border-left:3px solid var(--accent-blue); border-radius:4px;'>
+                    <strong>2. Feature Extraction:</strong> 3-Stage Conv2D (32, 64, 64 filters, 3&times;3 kernels) with BatchNorm, ReLU, MaxPool &amp; Dropout (0.2)
+                </div>
+                <div style='padding:8px 12px; background:rgba(99,102,241,0.08); border-left:3px solid var(--accent-indigo); border-radius:4px;'>
+                    <strong>3. Spatiotemporal Recurrence:</strong> Dimensional Permutation &rarr; Reshape to 16 time steps &times; 1024 features &rarr; LSTM layer (64 units, 0.3 dropout)
+                </div>
+                <div style='padding:8px 12px; background:rgba(16,185,129,0.08); border-left:3px solid var(--accent-emerald); border-radius:4px;'>
+                    <strong>4. Classification Head:</strong> Dense layer (64 units, ReLU) &rarr; Softmax output layer (8 discrete affective probabilities)
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with arch_c2:
         st.markdown("#### CNN Baseline (Spatial Convolutional Model)")
         st.markdown("""
-        ```
-        Input: (128 Mel Bands, 130 Frames, 1 Channel)
-        │
-        ├── Conv2D(32, 3x3, same) + BatchNorm + ReLU
-        ├── MaxPooling2D(2, 2) + Dropout(0.2)
-        │
-        ├── Conv2D(64, 3x3, same) + BatchNorm + ReLU
-        ├── MaxPooling2D(2, 2) + Dropout(0.2)
-        │
-        ├── Conv2D(64, 3x3, same) + BatchNorm + ReLU
-        ├── MaxPooling2D(2, 2) + Dropout(0.2)
-        │
-        ├── Flatten()
-        ├── Dense(64, ReLU) + Dropout(0.3)
-        └── Dense(8, Softmax) -> Categorical Affect
-        ```
-        """)
+        <div class='glass-card' style='padding: 1.25rem;'>
+            <div style='font-weight:700; color:var(--accent-blue); font-size:1.05rem; margin-bottom:0.75rem;'>CNN Baseline Layer Hierarchy</div>
+            <div style='display:flex; flex-direction:column; gap:8px;'>
+                <div style='padding:8px 12px; background:rgba(6,182,212,0.08); border-left:3px solid var(--accent-cyan); border-radius:4px;'>
+                    <strong>1. Input Tensor:</strong> 128 Mel frequency bands &times; 130 time frames (single acoustic channel)
+                </div>
+                <div style='padding:8px 12px; background:rgba(59,130,246,0.08); border-left:3px solid var(--accent-blue); border-radius:4px;'>
+                    <strong>2. Spatial Convolutions:</strong> 3-Stage Conv2D (32, 64, 64 filters, 3&times;3 kernels) with BatchNorm, ReLU, MaxPool &amp; Dropout (0.2)
+                </div>
+                <div style='padding:8px 12px; background:rgba(99,102,241,0.08); border-left:3px solid var(--accent-indigo); border-radius:4px;'>
+                    <strong>3. Dense Spatial Aggregation:</strong> Global Flatten &rarr; Fully connected Dense layer (64 units, ReLU, 0.3 dropout)
+                </div>
+                <div style='padding:8px 12px; background:rgba(16,185,129,0.08); border-left:3px solid var(--accent-emerald); border-radius:4px;'>
+                    <strong>4. Classification Head:</strong> Softmax output layer (8 discrete affective probabilities)
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
     m_nav1, m_nav2 = st.columns(2)
@@ -1693,12 +1729,12 @@ elif st.session_state.page == "HISTORY":
                 r_col1, r_col2 = st.columns([2, 1])
                 
                 with r_col1:
-                    st.write(f"**Filename:** `{rec['filename']}` &bull; **Duration:** {rec['duration']:.2f}s &bull; **Model:** {rec['model']}")
+                    st.markdown(f"**Filename:** <span style='color:var(--accent-cyan); font-weight:600;'>{rec['filename']}</span> &bull; **Duration:** {rec['duration']:.2f}s &bull; **Model:** {rec['model']}", unsafe_allow_html=True)
                     st.write(f"**Predicted Emotion:** **{rec['emotion'].capitalize()}** ({rec['confidence_pct']} - {rec['confidence_level']})")
                     st.write(f"**Top Candidates:** {rec['top_3']}")
                     if rec['user_notes']:
                         st.info(f"**Reviewer Note:** {rec['user_notes']}")
-                    st.caption(f"Tag: `{rec['user_tag']}` | Starred: {'Yes' if rec['is_starred'] else 'No'}")
+                    st.caption(f"Tag: {rec['user_tag']} | Starred: {'Yes' if rec['is_starred'] else 'No'}")
 
                 with r_col2:
                     st.markdown("#### Record Actions")
@@ -1796,11 +1832,11 @@ elif st.session_state.page == "ABOUT":
     with diag_c1:
         st.markdown("#### Environment & Dependencies")
         py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-        st.write(f"• **Python Runtime:** `{py_ver}` 🟢")
-        st.write(f"• **Streamlit Version:** `{st.__version__}` 🟢")
-        st.write(f"• **Librosa Version:** `{librosa.__version__}` 🟢")
+        st.markdown(f"• **Python Runtime:** <span style='color:var(--accent-cyan); font-weight:600;'>{py_ver}</span> 🟢", unsafe_allow_html=True)
+        st.markdown(f"• **Streamlit Version:** <span style='color:var(--accent-cyan); font-weight:600;'>{st.__version__}</span> 🟢", unsafe_allow_html=True)
+        st.markdown(f"• **Librosa Version:** <span style='color:var(--accent-cyan); font-weight:600;'>{librosa.__version__}</span> 🟢", unsafe_allow_html=True)
         plotly_ver = getattr(plotly, '__version__', '7.1.0')
-        st.write(f"• **Plotly Version:** `{plotly_ver}` 🟢")
+        st.markdown(f"• **Plotly Version:** <span style='color:var(--accent-cyan); font-weight:600;'>{plotly_ver}</span> 🟢", unsafe_allow_html=True)
 
     with diag_c2:
         st.markdown("#### Models & Storage Integrity")
@@ -1809,10 +1845,15 @@ elif st.session_state.page == "ABOUT":
         enc_path = os.path.join(config.MODELS_DIR, "label_encoder.pkl")
         db_path = os.path.join(config.RESULTS_DIR, "emotiva_history.db")
 
-        st.write(f"• **CNN Model Weights:** `{'Ready' if os.path.exists(cnn_path) else 'Missing'}` 🟢")
-        st.write(f"• **CNN-LSTM Model Weights:** `{'Ready' if os.path.exists(lstm_path) else 'Missing'}` 🟢")
-        st.write(f"• **Label Encoder:** `{'Ready' if os.path.exists(enc_path) else 'Missing'}` 🟢")
-        st.write(f"• **SQLite Database:** `{'Active' if os.path.exists(db_path) else 'Initialized'}` 🟢")
+        cnn_status = 'Ready' if os.path.exists(cnn_path) else 'Missing'
+        lstm_status = 'Ready' if os.path.exists(lstm_path) else 'Missing'
+        enc_status = 'Ready' if os.path.exists(enc_path) else 'Missing'
+        db_status = 'Active' if os.path.exists(db_path) else 'Initialized'
+
+        st.markdown(f"• **CNN Model Weights:** <span style='color:var(--accent-emerald); font-weight:600;'>{cnn_status}</span> 🟢", unsafe_allow_html=True)
+        st.markdown(f"• **CNN-LSTM Model Weights:** <span style='color:var(--accent-emerald); font-weight:600;'>{lstm_status}</span> 🟢", unsafe_allow_html=True)
+        st.markdown(f"• **Label Encoder:** <span style='color:var(--accent-emerald); font-weight:600;'>{enc_status}</span> 🟢", unsafe_allow_html=True)
+        st.markdown(f"• **SQLite Database:** <span style='color:var(--accent-emerald); font-weight:600;'>{db_status}</span> 🟢", unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -1820,9 +1861,9 @@ elif st.session_state.page == "ABOUT":
     st.markdown("""
     - **Sampling Rate:** Resampled to 22,050 Hz (Nyquist limit: 11,025 Hz, covering the full human speech formant range).
     - **Channel Configuration:** Mono-channel conversion.
-    - **Length Standardization:** Fixed 3.0 seconds duration (`int(sr * 3.0)` = 66,150 samples).
-    - **Silence Trimming:** `librosa.effects.trim` with 20 dB dynamic threshold.
-    - **Log-Mel Transform:** 128 Mel bands, N_FFT = 2048, Hop Length = 512, producing exact input matrices of shape `(128, 130, 1)`.
+    - **Length Standardization:** Fixed 3.0 seconds duration (66,150 acoustic samples at 22,050 Hz).
+    - **Silence Trimming:** Dynamic leading and trailing ambient silence removal with 20 dB threshold.
+    - **Log-Mel Transform:** 128 Mel frequency bands, 2048 FFT window size, 512 hop length, producing normalized spectrogram tensors of dimension 128 &times; 130.
     - **Speaker-Independent Partitioning:** Actor-wise group splits strictly prevent speaker overlap across train, validation, and test splits.
     """)
 

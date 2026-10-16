@@ -13,6 +13,7 @@ import base64
 from datetime import datetime
 import json
 import traceback
+import urllib.parse
 
 import numpy as np
 import pandas as pd
@@ -106,12 +107,26 @@ CSS_THEME = """
 }
 header[data-testid="stHeader"] {
     background: transparent !important;
-    pointer-events: auto !important;
+    pointer-events: none !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    z-index: 0 !important;
+}
+header[data-testid="stHeader"] * {
+    pointer-events: none !important;
 }
 .block-container {
-    padding-top: 1.5rem !important;
+    padding-top: 2rem !important;
     padding-bottom: 3.5rem !important;
     max-width: 1250px !important;
+    position: relative;
+    z-index: 10;
+}
+.stButton, .stButton > button {
+    pointer-events: auto !important;
+    cursor: pointer !important;
+    position: relative;
+    z-index: 20;
 }
 
 /* Global Body Font = Forum (Strict Requirement 10 & 11) */
@@ -418,7 +433,7 @@ PAGE_CONFIG = {
 # Bidirectional URL Query Parameter Sync (Preserves Route on Refresh & Back/Forward)
 query_page = st.query_params.get("page", None)
 if query_page:
-    cleaned_qp = query_page.upper().strip()
+    cleaned_qp = urllib.parse.unquote(str(query_page)).upper().strip()
     if cleaned_qp in PAGES and cleaned_qp != st.session_state.page:
         st.session_state.page = cleaned_qp
 
@@ -575,10 +590,10 @@ if st.session_state.page == "HOME":
     with c2:
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
-            if st.button("🚀 ANALYZE VOICE", type="primary", use_container_width=True):
+            if st.button("🚀 ANALYZE VOICE", key="btn_home_hero_analyze", type="primary", use_container_width=True):
                 navigate_to("ANALYZE")
         with col_btn2:
-            if st.button("🎛️ OPEN AUDIO LAB", use_container_width=True):
+            if st.button("🎛️ OPEN AUDIO LAB", key="btn_home_hero_audiolab", use_container_width=True):
                 navigate_to("AUDIO LAB")
 
     # System Status Cards
@@ -643,16 +658,16 @@ if st.session_state.page == "HOME":
     st.markdown("<br>", unsafe_allow_html=True)
     f1, f2, f3, f4 = st.columns(4)
     with f1:
-        if st.button("📊 Dataset Insights", use_container_width=True):
+        if st.button("📊 Dataset Insights", key="btn_home_nav_insights", use_container_width=True):
             navigate_to("INSIGHTS")
     with f2:
-        if st.button("🧪 Model Benchmarks", use_container_width=True):
+        if st.button("🧪 Model Benchmarks", key="btn_home_nav_models", use_container_width=True):
             navigate_to("MODELS")
     with f3:
-        if st.button("📜 Audit History", use_container_width=True):
+        if st.button("📜 Audit History", key="btn_home_nav_history", use_container_width=True):
             navigate_to("HISTORY")
     with f4:
-        if st.button("ℹ️ System Architecture", use_container_width=True):
+        if st.button("ℹ️ System Architecture", key="btn_home_nav_about", use_container_width=True):
             navigate_to("ABOUT")
 
 
@@ -807,7 +822,7 @@ elif st.session_state.page == "ANALYZE":
 
             btn_res, btn_lab = st.columns(2)
             with btn_res:
-                if st.button("🔄 RESET", use_container_width=True):
+                if st.button("🔄 RESET", key="btn_analyze_reset", use_container_width=True):
                     st.session_state.raw_input_bytes = None
                     st.session_state.audio_data = None
                     st.session_state.audio_sr = None
@@ -821,7 +836,7 @@ elif st.session_state.page == "ANALYZE":
                     st.rerun()
 
             with btn_lab:
-                if st.button("🎛️ Audio Lab →", use_container_width=True):
+                if st.button("🎛️ Audio Lab →", key="btn_analyze_to_audiolab", use_container_width=True):
                     navigate_to("AUDIO LAB")
 
         with p_col2:
@@ -836,12 +851,14 @@ elif st.session_state.page == "ANALYZE":
         with act_col1:
             analyze_clicked = st.button(
                 f"🔬 ANALYZE AFFECT ({st.session_state.model_type.upper()})",
+                key="btn_trigger_single_analysis",
                 type="primary",
                 use_container_width=True
             )
         with act_col2:
             dual_clicked = st.button(
                 "⚔️ DUAL-MODEL COMPARATIVE AUDIT (CNN vs CNN-LSTM)",
+                key="btn_trigger_dual_audit",
                 use_container_width=True
             )
 
@@ -1193,7 +1210,7 @@ elif st.session_state.page == "AUDIO LAB":
             picked_demo = st.selectbox("Choose demo sample to load into workstation:", [item[0] for item in sample_options])
             picked_file = next(item[1] for item in sample_options if item[0] == picked_demo)
             
-            if st.button("📥 Load Selected Sample into Audio Lab", type="primary"):
+            if st.button("📥 Load Selected Sample into Audio Lab", key="btn_audiolab_load_sample", type="primary"):
                 s_path = os.path.join(samples_dir, picked_file)
                 if not os.path.exists(s_path):
                     s_path = os.path.join(samples_dir, picked_file.replace("demo_", "sample_"))
@@ -1210,7 +1227,7 @@ elif st.session_state.page == "AUDIO LAB":
 
         with c_sel2:
             st.markdown("Or navigate back to analyze voice:")
-            if st.button("← Go to Analyze Page", use_container_width=True):
+            if st.button("← Go to Analyze Page", key="btn_audiolab_empty_to_analyze", use_container_width=True):
                 navigate_to("ANALYZE")
 
     else:
@@ -1227,7 +1244,7 @@ elif st.session_state.page == "AUDIO LAB":
             st.metric("Duration", f"{len(y)/sr:.2f} s")
         with top_col3:
             st.metric("Sample Rate", f"{sr} Hz")
-            if st.button("← Back to Analyze", use_container_width=True):
+            if st.button("← Back to Analyze", key="btn_audiolab_header_to_analyze", use_container_width=True):
                 navigate_to("ANALYZE")
 
         st.markdown("---")
@@ -1455,7 +1472,7 @@ elif st.session_state.page == "INSIGHTS":
             st.audio(f_demo.read(), format='audio/wav')
 
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("Explore Model Benchmarks & Architecture (MODELS) →", type="primary"):
+    if st.button("Explore Model Benchmarks & Architecture (MODELS) →", key="btn_insights_to_models", type="primary"):
         navigate_to("MODELS")
 
 
@@ -1615,10 +1632,10 @@ elif st.session_state.page == "MODELS":
     st.markdown("<br>", unsafe_allow_html=True)
     m_nav1, m_nav2 = st.columns(2)
     with m_nav1:
-        if st.button("🔬 Test Models on Live Voice (ANALYZE)", type="primary", use_container_width=True):
+        if st.button("🔬 Test Models on Live Voice (ANALYZE)", key="btn_models_to_analyze", type="primary", use_container_width=True):
             navigate_to("ANALYZE")
     with m_nav2:
-        if st.button("📜 View Audit Log & Saved Inferences (HISTORY)", use_container_width=True):
+        if st.button("📜 View Audit Log & Saved Inferences (HISTORY)", key="btn_models_to_history", use_container_width=True):
             navigate_to("HISTORY")
 
 
@@ -1632,7 +1649,7 @@ elif st.session_state.page == "HISTORY":
         st.markdown("<p style='color: var(--text-secondary); font-size:1.1rem;'>Audit trail of all audio predictions with database persistence, notes, tags, filtering, and export.</p>", unsafe_allow_html=True)
     with h_title_c2:
         st.markdown("<div style='margin-top:0.8rem;'></div>", unsafe_allow_html=True)
-        if st.button("🔬 New Analysis (ANALYZE)", type="primary", use_container_width=True):
+        if st.button("🔬 New Analysis (ANALYZE)", key="btn_history_to_analyze", type="primary", use_container_width=True):
             navigate_to("ANALYZE")
 
     # 1. Summary Statistics Cards (CRUD - Aggregation)
@@ -1676,7 +1693,7 @@ elif st.session_state.page == "HISTORY":
 
     if not records:
         st.info("No matching inference records found in database. Go to ANALYZE page to run predictions.")
-        if st.button("← Go to Analyze"):
+        if st.button("← Go to Analyze", key="btn_history_empty_to_analyze"):
             navigate_to("ANALYZE")
     else:
         # Action Bar: Export & Clear
@@ -1881,7 +1898,7 @@ elif st.session_state.page == "ABOUT":
     """)
 
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("🚀 Return to Analyze Voice (ANALYZE)", type="primary"):
+    if st.button("🚀 Return to Analyze Voice (ANALYZE)", key="btn_about_to_analyze", type="primary"):
         navigate_to("ANALYZE")
 
 

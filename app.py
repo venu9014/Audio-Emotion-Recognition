@@ -100,33 +100,20 @@ CSS_THEME = """
   --border-glow: rgba(6, 182, 212, 0.35);
 }
 
-/* Streamlit Chrome, Toolbar & Pointer Events Fix */
-#MainMenu, footer, .stDeployButton, [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], [data-testid="manage-app-button"], [data-testid="stHeaderActionElements"] {
-    display: none !important;
+/* Streamlit Chrome & Pointer Events Fix */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+.stDeployButton {display: none;}
+header {
     visibility: hidden !important;
-}
-header[data-testid="stHeader"] {
-    background: transparent !important;
-    pointer-events: none !important;
-    height: 0 !important;
-    min-height: 0 !important;
-    z-index: 0 !important;
-}
-header[data-testid="stHeader"] * {
-    pointer-events: none !important;
 }
 .block-container {
     padding-top: 2rem !important;
     padding-bottom: 3.5rem !important;
     max-width: 1250px !important;
-    position: relative;
-    z-index: 10;
 }
-.stButton, .stButton > button {
-    pointer-events: auto !important;
+.stButton button {
     cursor: pointer !important;
-    position: relative;
-    z-index: 20;
 }
 
 /* Global Body Font = Forum (Strict Requirement 10 & 11) */
